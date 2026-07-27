@@ -8,6 +8,11 @@
 # browser reject the response with "multiple values '*, *'").
 (rpc_upstream) {
 	reverse_proxy localhost:9944 {
+		# WebSocket subscriptions are long-lived bidirectional streams. Without
+		# immediate flushing Caddy buffers frames and can stall/drop idle sockets,
+		# which shows up as WS dying after seconds and clients reconnecting in a
+		# loop. -1 disables buffering so frames pass through as they arrive.
+		flush_interval -1
 		header_down -Access-Control-Allow-Origin
 		header_down -Access-Control-Allow-Methods
 		header_down -Access-Control-Allow-Headers
@@ -48,7 +53,7 @@
 	# WebSocket subscriptions (live blocks, mempool) are a single long-lived upgrade
 	# request. The limiter counts each upgrade as one event, so this caps how often
 	# an IP may (re)open a socket — NOT how long one stays open. A healthy client
-	# opens one socket and holds it (the SDK's ws heartbeat keeps it alive), so 10
+	# opens one socket and holds it (the SDK's ws heartbeat keeps it alive), so 30
 	# upgrades / 60s is ample headroom for a page reload or a genuine reconnect,
 	# while a bot that reopens a socket every few seconds trips it. Keyed on the
 	# real client IP Cloudflare forwards; direct-origin (no CF header) falls back
@@ -60,7 +65,7 @@
 			rate_limit {
 				zone ws_cf {
 					key {http.request.header.CF-Connecting-IP}
-					events 10
+					events 30
 					window 60s
 				}
 			}
@@ -70,7 +75,7 @@
 			rate_limit {
 				zone ws_direct {
 					key {remote_host}
-					events 10
+					events 30
 					window 60s
 				}
 			}
