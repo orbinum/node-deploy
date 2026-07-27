@@ -1,0 +1,79 @@
+# Orbinum Testnet — dedicated ARCHIVE RPC node for the indexer.
+#
+# Runs on the SAME box as the indexer writer. The writer talks to it over
+# localhost (127.0.0.1:9944) so its RPC traffic never touches the public
+# rpc-1/rpc-2 — that sharing is what caused the explorer self-DoS.
+#
+# Archive: keeps full historical state (--state-pruning archive) so the writer
+# can backfill / re-index any block. A pruned node discards old state and the
+# writer fails with "State already discarded".
+#
+# RPC is bound to loopback only (no --rpc-external, no Caddy, no ports:). It is
+# reachable via `docker exec` and by other containers through host networking,
+# never from the internet.
+#
+# Deploy:
+#   cp .env.example .env      # fill RPC_NODE_KEY
+#   docker compose up -d
+#   # wait for full sync, then point the indexer at ws://127.0.0.1:9944
+
+services:
+  orbinum-indexer-rpc:
+    image: ${ORBINUM_IMAGE:-ghcr.io/orbinum/node:testnet-latest}
+    platform: linux/amd64
+    container_name: orbinum-indexer-rpc
+    network_mode: host
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    command: >
+      --chain /chain-specs/testnet-spec.json
+      --name "${RPC_NAME:-Orbinum-Indexer-RPC}"
+      --base-path /data
+      --listen-addr /ip4/0.0.0.0/tcp/30333
+      --node-key ${RPC_NODE_KEY}
+      --rpc-port 9944
+      --rpc-methods Safe
+      --rpc-max-connections 200
+      --state-pruning archive
+      --blocks-pruning archive
+      --db-cache ${RPC_DB_CACHE:-1024}
+      --trie-cache-size ${RPC_TRIE_CACHE:-134217728}
+      --no-mdns
+      --no-private-ipv4
+      --prometheus-external
+      --prometheus-port 9615
+      --log info
+    volumes:
+      - indexer-rpc-data:/data
+      - ../chainspec/testnet-spec.json:/chain-specs/testnet-spec.json:ro
+    restart: unless-stopped
+    mem_limit: ${RPC_MEM_LIMIT:-4g}
+    cpus: ${RPC_CPUS:-1.5}
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+      com.centurylinklabs.watchtower.scope: "indexer-rpc"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+  watchtower:
+    image: ghcr.io/nicholas-fedor/watchtower:latest
+    container_name: orbinum-watchtower-indexer-rpc
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      WATCHTOWER_POLL_INTERVAL: "300"
+      WATCHTOWER_LABEL_ENABLE: "true"
+      WATCHTOWER_SCOPE: "indexer-rpc"
+      WATCHTOWER_ROLLING_RESTART: "true"
+      WATCHTOWER_LOG_LEVEL: "info"
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"
+      com.centurylinklabs.watchtower.scope: "indexer-rpc"
+
+volumes:
+  indexer-rpc-data:

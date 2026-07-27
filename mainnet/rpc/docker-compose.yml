@@ -1,0 +1,78 @@
+services:
+  orbinum-rpc-node:
+    image: ${ORBINUM_IMAGE:-ghcr.io/orbinum/node:mainnet-latest}
+    platform: linux/amd64
+    container_name: orbinum-rpc-node
+    network_mode: host
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    command: >
+      --chain /chain-specs/mainnet-spec.json
+      --name "${RPC_NAME:-Orbinum-RPC}"
+      --base-path /data
+      --listen-addr /ip4/0.0.0.0/tcp/30333
+      --node-key ${RPC_NODE_KEY}
+      --rpc-port 9944
+      --rpc-cors all
+      --rpc-external
+      --rpc-methods Safe
+      --rpc-max-connections 5000
+      --state-pruning archive
+      --blocks-pruning archive
+      --no-mdns
+      --no-private-ipv4
+      --prometheus-external
+      --prometheus-port 9615
+      --log info
+    volumes:
+      - rpc-node-data:/data
+      - ../chainspec/mainnet-spec.json:/chain-specs/mainnet-spec.json:ro
+    restart: unless-stopped
+    mem_limit: ${RPC_MEM_LIMIT:-6g}
+    cpus: ${RPC_CPUS:-1.5}
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+  caddy:
+    build:
+      context: ../../common
+      dockerfile: Caddy.Dockerfile
+    image: orbinum-caddy-ratelimit:2
+    container_name: orbinum-caddy
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      RPC_DOMAIN: ${RPC_DOMAIN:-rpc.example.invalid}
+    volumes:
+      - ../../common/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./origin.pem:/etc/caddy/origin.pem:ro
+      - ./origin.key:/etc/caddy/origin.key:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"
+
+  watchtower:
+    image: ghcr.io/nicholas-fedor/watchtower:latest
+    container_name: orbinum-watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      WATCHTOWER_POLL_INTERVAL: "300"
+      WATCHTOWER_LABEL_ENABLE: "true"
+      WATCHTOWER_ROLLING_RESTART: "true"
+      WATCHTOWER_LOG_LEVEL: "info"
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"
+
+volumes:
+  rpc-node-data:
+  caddy-data:
+  caddy-config:

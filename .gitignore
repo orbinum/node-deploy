@@ -1,0 +1,11 @@
+# Secrets and per-host config
+.env
+*/*/.env
+
+# TLS material (Cloudflare Origin Certificate)
+origin.pem
+origin.key
+
+# Chain-spec generation intermediates
+**/spec-plain.json
+**/spec-customized.json

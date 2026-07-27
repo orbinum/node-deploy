@@ -1,0 +1,110 @@
+# caddy-ratelimit is not a standard directive, so it must be ordered explicitly.
+{
+	order rate_limit before basic_auth
+}
+
+# Proxy to the node, stripping its CORS headers so only Caddy's single copy
+# survives (the node also emits CORS via --rpc-cors all; duplicates make the
+# browser reject the response with "multiple values '*, *'").
+(rpc_upstream) {
+	reverse_proxy localhost:9944 {
+		header_down -Access-Control-Allow-Origin
+		header_down -Access-Control-Allow-Methods
+		header_down -Access-Control-Allow-Headers
+		header_down -Access-Control-Expose-Headers
+		header_down -Vary
+	}
+}
+
+{$RPC_DOMAIN:rpc.example.invalid} {
+	tls /etc/caddy/origin.pem /etc/caddy/origin.key
+
+	# Access log — who gets 429'd, with which client IP, and whether a 429 came
+	# from Caddy (Retry-After present) or the node ("Too many connections" body).
+	log {
+		output file /data/access.log {
+			roll_size 50mb
+			roll_keep 3
+		}
+		format json
+	}
+
+	# ── CORS — Caddy is the single source ───────────────────────────────────────
+	# Set at the Caddy layer (not just the proxy) so Caddy-generated responses —
+	# the rate-limit 429 — carry CORS too; a 429 without CORS is what the browser
+	# turned into an opaque "CORS error" and broke the explorer.
+	header {
+		Access-Control-Allow-Origin "*"
+		Access-Control-Allow-Methods "GET, POST, OPTIONS"
+		Access-Control-Allow-Headers "Content-Type"
+		Access-Control-Max-Age "86400"
+	}
+
+	# CORS preflight: answer 204 here so the browser's OPTIONS probe never reaches
+	# the node or the rate limiter (a throttled preflight blocks the real request).
+	@options method OPTIONS
+	respond @options 204
+
+	# WebSocket subscriptions (live blocks, mempool) are a single long-lived upgrade
+	# request. The limiter counts each upgrade as one event, so this caps how often
+	# an IP may (re)open a socket — NOT how long one stays open. A healthy client
+	# opens one socket and holds it (the SDK's ws heartbeat keeps it alive), so 10
+	# upgrades / 60s is ample headroom for a page reload or a genuine reconnect,
+	# while a bot that reopens a socket every few seconds trips it. Keyed on the
+	# real client IP Cloudflare forwards; direct-origin (no CF header) falls back
+	# to the peer IP in a separate zone so a missing header can't share one bucket.
+	@websocket header Connection *Upgrade*
+	handle @websocket {
+		@wsViaCf header CF-Connecting-IP *
+		handle @wsViaCf {
+			rate_limit {
+				zone ws_cf {
+					key {http.request.header.CF-Connecting-IP}
+					events 10
+					window 60s
+				}
+			}
+			import rpc_upstream
+		}
+		handle {
+			rate_limit {
+				zone ws_direct {
+					key {remote_host}
+					events 10
+					window 60s
+				}
+			}
+			import rpc_upstream
+		}
+	}
+
+	# HTTP JSON-RPC (POST): per-IP rate limit, 500 events / 10s = 50 req/s per
+	# IP — headroom for explorers/wallets/light bots that burst, while still
+	# capping an abusive IP. Two zones by traffic source: Cloudflare-proxied
+	# requests are keyed on the real client IP CF forwards (the direct peer is
+	# always a CF edge, {remote_host} would limit everyone as one bucket), and
+	# direct-origin requests are keyed on their peer IP in a separate zone —
+	# a missing header can never collapse everyone into one shared bucket.
+	@viaCf header CF-Connecting-IP *
+	handle @viaCf {
+		rate_limit {
+			zone rpc_cf {
+				key {http.request.header.CF-Connecting-IP}
+				events 500
+				window 10s
+			}
+		}
+		import rpc_upstream
+	}
+
+	handle {
+		rate_limit {
+			zone rpc_direct {
+				key {remote_host}
+				events 500
+				window 10s
+			}
+		}
+		import rpc_upstream
+	}
+}
