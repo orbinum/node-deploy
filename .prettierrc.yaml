@@ -1,0 +1,3 @@
+# Prettier — YAML/JSON/Markdown formatting for this repo.
+printWidth: 100
+proseWrap: preserve

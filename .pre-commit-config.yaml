@@ -1,0 +1,35 @@
+# Lint + format for this deploy repo. Run locally with:
+#   pip install pre-commit && pre-commit install
+#   pre-commit run --all-files
+# CI runs the same hooks (see .github/workflows/lint.yml).
+# Generated chain specs are verbatim artifacts — never reformat them.
+exclude: '^(testnet|mainnet)/chainspec/.*\.json$'
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-merge-conflict
+      - id: check-added-large-files
+
+  # Format YAML / JSON / Markdown
+  - repo: https://github.com/rbubley/mirrors-prettier
+    rev: v3.4.2
+    hooks:
+      - id: prettier
+        types_or: [yaml, json, markdown]
+
+  # Lint YAML semantics (prettier only formats, doesn't validate)
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.35.1
+    hooks:
+      - id: yamllint
+        args: [--strict]
+
+  # Lint Dockerfiles
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.13.1-beta
+    hooks:
+      - id: hadolint-docker
