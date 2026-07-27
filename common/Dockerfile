@@ -3,7 +3,7 @@
 FROM rust:1.88-bookworm AS builder
 
 # Install dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     clang \
     libclang-dev \
@@ -28,7 +28,7 @@ FROM debian:bookworm-slim
 
 # Install runtime dependencies
 # curl is needed for inserting session keys via the local RPC (docker exec)
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     libssl3 \
     curl \

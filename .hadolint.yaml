@@ -1,0 +1,5 @@
+# DL3008: pinning apt package versions is high-maintenance and breaks on repo
+# updates for an infra image we rebuild often. --no-install-recommends (DL3015)
+# is applied in the Dockerfile instead.
+ignored:
+  - DL3008
