@@ -32,6 +32,7 @@ services:
       --base-path /data
       --listen-addr /ip4/0.0.0.0/tcp/30333
       --node-key ${RPC_NODE_KEY}
+      ${RESERVED_NODES}
       --rpc-port 9944
       --rpc-methods Safe
       --rpc-max-connections 200
@@ -40,7 +41,7 @@ services:
       --db-cache ${RPC_DB_CACHE:-1024}
       --trie-cache-size ${RPC_TRIE_CACHE:-134217728}
       --no-mdns
-      --no-private-ipv4
+      ${NO_PRIVATE_IPV4}
       --prometheus-external
       --prometheus-port 9615
       --log info
