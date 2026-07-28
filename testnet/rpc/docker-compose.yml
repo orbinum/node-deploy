@@ -18,6 +18,8 @@ services:
       --rpc-external
       --rpc-methods Safe
       --rpc-max-connections 5000
+      --in-peers 64
+      --out-peers 16
       --state-pruning archive
       --blocks-pruning archive
       --no-mdns
