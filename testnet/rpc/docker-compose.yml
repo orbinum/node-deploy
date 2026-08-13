@@ -13,6 +13,7 @@ services:
       --base-path /data
       --listen-addr /ip4/0.0.0.0/tcp/30333
       --node-key ${RPC_NODE_KEY}
+      ${RESERVED_NODES}
       --rpc-port 9944
       --rpc-cors all
       --rpc-external
