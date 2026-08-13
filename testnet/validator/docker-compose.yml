@@ -13,6 +13,8 @@ services:
       --listen-addr /ip4/0.0.0.0/tcp/30333
       --validator
       --node-key ${VALIDATOR_NODE_KEY}
+      ${PUBLIC_ADDR}
+      ${RESERVED_NODES}
       --rpc-port 9944
       --rpc-methods Unsafe
       --no-mdns
