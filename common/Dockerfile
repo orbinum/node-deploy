@@ -42,8 +42,8 @@ RUN useradd -m -u 1000 -U -s /bin/sh orbinum && \
 # Copy binary from builder
 COPY --from=builder /orbinum/target/release/orbinum-node /usr/local/bin/orbinum-node
 
-# Set user
-USER orbinum
+# Set user (numeric UID:GID so the host can resolve it — see useradd -u 1000 -U above)
+USER 1000:1000
 
 # Expose ports
 # 30333: P2P
