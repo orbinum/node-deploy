@@ -6,6 +6,11 @@ services:
     dns:
       - 8.8.8.8
       - 1.1.1.1
+    # TELEMETRY_URL reports to telemetry.orbinum.network by default. It uses
+    # `${VAR-default}`, NOT `${VAR:-default}`: only the hyphen-alone form
+    # treats an EMPTY TELEMETRY_URL as "opt out" rather than falling back to
+    # the default. A comment cannot go inside the `command: >` block below —
+    # folded scalars have no comments, so it would be passed as arguments.
     command: >
       --chain /chain-specs/testnet-spec.json
       --name "${VALIDATOR_NAME:-Orbinum-Validator}"
@@ -15,6 +20,7 @@ services:
       --node-key ${VALIDATOR_NODE_KEY}
       ${PUBLIC_ADDR}
       ${RESERVED_NODES}
+      ${TELEMETRY_URL---telemetry-url "wss://telemetry.orbinum.io/submit/ 0"}
       --rpc-port 9944
       --rpc-methods Unsafe
       --no-mdns
@@ -26,6 +32,11 @@ services:
       - validator-data:/data
     ports:
       - "${P2P_BIND:-0.0.0.0}:30333:30333"
+      # Métricas Prometheus. El nodo no elige IP de bind (--prometheus-external
+      # ata 0.0.0.0 DENTRO del contenedor), así que el bind del host es lo que
+      # limita la exposición. Ponlo en la IP privada para que 9615 no aparezca
+      # en la NIC pública. El default 127.0.0.1 falla cerrado.
+      - "${METRICS_BIND:-127.0.0.1}:9615:9615"
     restart: unless-stopped
     labels:
       com.centurylinklabs.watchtower.enable: "true"

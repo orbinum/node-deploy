@@ -94,6 +94,44 @@ Removing it re-enables Caddy's automatic Let's Encrypt, which needs ports 80 and
 443 reachable from the internet. Skip the two `cp` commands in that case. Note
 this leaves the node directly exposed, without the edge protection above.
 
+## Telemetry
+
+Every role can report to Orbinum's telemetry at
+**[telemetry.orbinum.network](https://telemetry.orbinum.network)** — block
+height, finalized blocks, peers, transactions in the pool, propagation time,
+version and approximate location.
+
+**It is on by default.** Every role sends to `wss://telemetry.orbinum.io/submit/`
+unless told otherwise; the node appears within a few seconds under the name in
+`VALIDATOR_NAME` / `RPC_NAME`.
+
+To opt out, set the variable to empty in the node's `.env` and restart:
+
+```sh
+TELEMETRY_URL=
+```
+
+To report somewhere else instead, put the whole flag in it:
+
+```sh
+TELEMETRY_URL=--telemetry-url "wss://telemetry.example/submit/ 0"
+```
+
+Three things about that value are load-bearing:
+
+- **The quotes stay.** The node parses `"<url> <level>"` as a single argument;
+  without them the level is read as a separate flag and startup fails.
+- **The trailing slash stays.** `/submit` without it does not upgrade.
+- **`0` is the verbosity level**, not a placeholder. Higher levels add
+  per-block chatter that the dashboard does not display.
+
+Telemetry is an outbound connection, so it exposes no port and needs no
+firewall change — it works on nodes whose RPC is loopback-only.
+
+Note this reports a node's name, version, block height, peer count and
+approximate location. An operator who does not want that published opts out
+with the empty value above.
+
 ## Node image
 
 `common/Dockerfile` builds `orbinum-node`. The compose files default to

@@ -6,6 +6,11 @@ services:
     dns:
       - 8.8.8.8
       - 1.1.1.1
+    # TELEMETRY_URL reports to telemetry.orbinum.network by default. It uses
+    # `${VAR-default}`, NOT `${VAR:-default}`: only the hyphen-alone form
+    # treats an EMPTY TELEMETRY_URL as "opt out" rather than falling back to
+    # the default. A comment cannot go inside the `command: >` block below —
+    # folded scalars have no comments, so it would be passed as arguments.
     command: >
       --chain /chain-specs/mainnet-spec.json
       --name "${VALIDATOR_NAME:-Orbinum-Validator}"
@@ -13,6 +18,7 @@ services:
       --listen-addr /ip4/0.0.0.0/tcp/30333
       --validator
       --node-key ${VALIDATOR_NODE_KEY}
+      ${TELEMETRY_URL---telemetry-url "wss://telemetry.orbinum.io/submit/ 0"}
       --rpc-port 9944
       --rpc-methods Unsafe
       --no-mdns
