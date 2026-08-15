@@ -1,4 +1,3 @@
-
 # RPC Node
 
 The RPC node exposes a public HTTP/WebSocket endpoint for wallets, dApps, and the explorer. It does **not** participate in consensus.
@@ -75,11 +74,11 @@ cp .env.example .env
 
 Edit `.env` and set:
 
-| Variable        | What to set                                                         |
-| --------------- | ------------------------------------------------------------------- |
-| `RPC_NAME`      | Identifiable name shown in telemetry (e.g. `Orbinum-RPC-1`).        |
-| `RPC_NODE_KEY`  | This node's libp2p key — generate with `openssl rand -hex 32`.      |
-| `RPC_DOMAIN`    | Public domain with a DNS A record pointing to this VPS's public IP. |
+| Variable        | What to set                                                                   |
+| --------------- | ----------------------------------------------------------------------------- |
+| `RPC_NAME`      | Identifiable name shown in telemetry (e.g. `Orbinum-RPC-1`).                  |
+| `RPC_NODE_KEY`  | This node's libp2p key — generate with `openssl rand -hex 32`.                |
+| `RPC_DOMAIN`    | Public domain with a DNS A record pointing to this VPS's public IP.           |
 | `TELEMETRY_URL` | On by default; set empty to opt out. See [Telemetry](../README.md#telemetry). |
 
 > **Keep `RPC_NODE_KEY` stable** — this node's PeerId goes public in `bootNodes`.
@@ -194,6 +193,7 @@ docker exec orbinum-rpc-node curl -s -H "Content-Type: application/json" \
 ```
 
 The endpoint is ready to use as:
+
 - `https://rpc-1.testnet.orbinum.io` — HTTP RPC
 - `wss://rpc-1.testnet.orbinum.io` — WebSocket (Polkadot.js, Talisman)
 
