@@ -126,19 +126,13 @@ docker compose up -d --force-recreate orbinum-rpc-node
 `restart` restarts the process inside the container that already exists, and a
 container's command is fixed when it is created — so the node comes back with
 the arguments it had before, and an edited `.env` appears to do nothing.
-`docker compose config` is no help here either: it prints what *would* be
+`docker compose config` is no help here either: it prints what _would_ be
 applied, not what the running container holds. To see the arguments a live node
 actually has:
 
 ```sh
 docker inspect orbinum-rpc-node --format '{{join .Config.Cmd " "}}'
 ```
-
-The symptom is confusing, which is why it is worth knowing: the chainspec's
-`telemetryEndpoints` still lists `telemetry.polkadot.io`, and `--telemetry-url`
-is what overrides it. A container created without that flag therefore reports
-to Polkadot's telemetry — so it looks like a node ignoring the setting, rather
-than one that never received it.
 
 Three things about that value are load-bearing:
 
@@ -153,14 +147,12 @@ firewall change — it works on nodes whose RPC is loopback-only.
 
 Note this reports a node's name, version, block height, peer count and
 approximate location. An operator who does not want that published opts out
-with the empty value above.
-
-`testnet-spec.json` carries an empty `telemetryEndpoints`, so clearing
-`TELEMETRY_URL` really does silence a node. It used to list Parity's endpoint —
-inherited from the spec this chain was generated from — which meant opting out
-quietly redirected the same data to `telemetry.polkadot.io` instead of stopping
-it. The field is metadata read by the client, not part of the genesis state, so
-emptying it left the chain's genesis hash untouched.
+with the empty value above, and that really does silence the node:
+`testnet-spec.json` carries an empty `telemetryEndpoints`. It used to list
+Parity's endpoint, inherited from the spec this chain was generated from, which
+meant opting out quietly redirected the same data to `telemetry.polkadot.io`
+rather than stopping it. That field is metadata read by the client, not part of
+the genesis state, so emptying it left the chain's genesis hash untouched.
 
 ## Node image
 
