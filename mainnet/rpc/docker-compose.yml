@@ -7,7 +7,8 @@ services:
     dns:
       - 8.8.8.8
       - 1.1.1.1
-    # TELEMETRY_URL reports to telemetry.orbinum.network by default. It uses
+    # TELEMETRY_URL reports to telemetry.orbinum.io by default (the dashboard
+    # that reads it is telemetry.orbinum.network). It uses
     # `${VAR-default}`, NOT `${VAR:-default}`: only the hyphen-alone form
     # treats an EMPTY TELEMETRY_URL as "opt out" rather than falling back to
     # the default. A comment cannot go inside the `command: >` block below —
