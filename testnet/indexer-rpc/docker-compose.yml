@@ -36,7 +36,7 @@ services:
       --chain /chain-specs/testnet-spec.json
       --name "${RPC_NAME:-Orbinum-Indexer-RPC}"
       --base-path /data
-      --listen-addr /ip4/0.0.0.0/tcp/30333
+      --listen-addr /ip4/${P2P_BIND:-0.0.0.0}/tcp/30333
       --node-key ${RPC_NODE_KEY}
       ${RESERVED_NODES}
       ${TELEMETRY_URL---telemetry-url "wss://telemetry.orbinum.io/submit/ 0"}
