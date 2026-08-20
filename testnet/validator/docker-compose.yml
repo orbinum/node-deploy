@@ -21,7 +21,7 @@ services:
       --node-key ${VALIDATOR_NODE_KEY}
       ${PUBLIC_ADDR}
       ${RESERVED_NODES}
-      ${TELEMETRY_URL---telemetry-url "wss://telemetry.orbinum.io/submit/ 0"}
+      ${TELEMETRY_URL---telemetry-url "wss://telemetry.orbinum.io/submit/ 1"}
       --rpc-port 9944
       --rpc-methods Unsafe
       --no-mdns
