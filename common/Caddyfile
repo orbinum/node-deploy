@@ -6,13 +6,44 @@
 # Proxy to the node, stripping its CORS headers so only Caddy's single copy
 # survives (the node also emits CORS via --rpc-cors all; duplicates make the
 # browser reject the response with "multiple values '*, *'").
-(rpc_upstream) {
+#
+# Both snippets cap max_conns_per_host. Without a cap Caddy opens one upstream
+# connection per client and never recycles, so client count passes straight
+# through to the node: enough concurrent browsers exhaust --rpc-max-connections
+# and the node starts answering "Too many connections" to everyone, including
+# localhost. The two caps sum to 1900, comfortably under the node's 5000, so
+# saturation is impossible no matter how much traffic arrives.
+
+# WebSocket: each subscription is a long-lived 1:1 stream that cannot be pooled,
+# so the cap has to cover the real concurrent-socket count.
+(rpc_upstream_ws) {
 	reverse_proxy localhost:9944 {
 		# WebSocket subscriptions are long-lived bidirectional streams. Without
 		# immediate flushing Caddy buffers frames and can stall/drop idle sockets,
 		# which shows up as WS dying after seconds and clients reconnecting in a
 		# loop. -1 disables buffering so frames pass through as they arrive.
 		flush_interval -1
+		transport http {
+			max_conns_per_host 1500
+		}
+		header_down -Access-Control-Allow-Origin
+		header_down -Access-Control-Allow-Methods
+		header_down -Access-Control-Allow-Headers
+		header_down -Access-Control-Expose-Headers
+		header_down -Vary
+	}
+}
+
+# HTTP JSON-RPC: POSTs finish in milliseconds, so a small keepalive pool serves
+# thousands of req/s. No flush_interval here — buffering is what lets these
+# connections be reused instead of held open per client.
+(rpc_upstream) {
+	reverse_proxy localhost:9944 {
+		transport http {
+			max_conns_per_host 400
+			keepalive_idle_conns 100
+			keepalive 60s
+		}
 		header_down -Access-Control-Allow-Origin
 		header_down -Access-Control-Allow-Methods
 		header_down -Access-Control-Allow-Headers
@@ -69,7 +100,7 @@
 					window 60s
 				}
 			}
-			import rpc_upstream
+			import rpc_upstream_ws
 		}
 		handle {
 			rate_limit {
@@ -79,7 +110,7 @@
 					window 60s
 				}
 			}
-			import rpc_upstream
+			import rpc_upstream_ws
 		}
 	}
 
