@@ -9,7 +9,6 @@
   "telemetryEndpoints": [],
   "protocolId": "orbinum",
   "properties": {
-    "isEthereum": true,
     "ss58Format": 42,
     "tokenDecimals": 18,
     "tokenSymbol": "ORB"
