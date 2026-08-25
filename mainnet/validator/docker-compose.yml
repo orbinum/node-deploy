@@ -22,6 +22,7 @@ services:
       ${TELEMETRY_URL---telemetry-url "wss://telemetry.orbinum.io/submit/ 1"}
       --rpc-port 9944
       --rpc-methods Unsafe
+      ${RPC_EXTERNAL}
       --no-mdns
       --prometheus-external
       --prometheus-port 9615
@@ -30,7 +31,8 @@ services:
       - ../chainspec/mainnet-spec.json:/chain-specs/mainnet-spec.json:ro
       - validator-data:/data
     ports:
-      - "${P2P_BIND:-0.0.0.0}:30333:30333"
+      - "${P2P_BIND:-0.0.0.0}:${P2P_PORT:-30333}:30333"
+      - "${RPC_BIND:-127.0.0.1}:${RPC_PORT:-9944}:9944"
     restart: unless-stopped
     labels:
       com.centurylinklabs.watchtower.enable: "true"

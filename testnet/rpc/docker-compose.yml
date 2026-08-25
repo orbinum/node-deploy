@@ -7,21 +7,15 @@ services:
     dns:
       - 8.8.8.8
       - 1.1.1.1
-    # TELEMETRY_URL reports to telemetry.orbinum.io by default (the dashboard
-    # that reads it is telemetry.orbinum.network). It uses
-    # `${VAR-default}`, NOT `${VAR:-default}`: only the hyphen-alone form
-    # treats an EMPTY TELEMETRY_URL as "opt out" rather than falling back to
-    # the default. A comment cannot go inside the `command: >` block below —
-    # folded scalars have no comments, so it would be passed as arguments.
     command: >
       --chain /chain-specs/testnet-spec.json
       --name "${RPC_NAME:-Orbinum-RPC}"
       --base-path /data
-      --listen-addr /ip4/0.0.0.0/tcp/30333
+      --listen-addr /ip4/0.0.0.0/tcp/${P2P_PORT:-30333}
       --node-key ${RPC_NODE_KEY}
       ${RESERVED_NODES}
       ${TELEMETRY_URL---telemetry-url "wss://telemetry.orbinum.io/submit/ 0"}
-      --rpc-port 9944
+      --rpc-port ${RPC_PORT:-9944}
       --rpc-cors all
       --rpc-external
       --rpc-methods Safe
@@ -33,7 +27,7 @@ services:
       --no-mdns
       --no-private-ipv4
       --prometheus-external
-      --prometheus-port 9615
+      --prometheus-port ${METRICS_PORT:-9615}
       --log info
     volumes:
       - rpc-node-data:/data
@@ -59,6 +53,7 @@ services:
     restart: unless-stopped
     environment:
       RPC_DOMAIN: ${RPC_DOMAIN:-rpc.example.invalid}
+      RPC_PORT: ${RPC_PORT:-9944}
     volumes:
       - ../../common/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./origin.pem:/etc/caddy/origin.pem:ro

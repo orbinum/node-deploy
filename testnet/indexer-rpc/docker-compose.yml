@@ -1,8 +1,8 @@
 # Orbinum Testnet — dedicated ARCHIVE RPC node for the indexer.
 #
 # Runs on the SAME box as the indexer writer. The writer talks to it over
-# localhost (127.0.0.1:9944) so its RPC traffic never touches the public
-# rpc-1/rpc-2 — that sharing is what caused the explorer self-DoS.
+# localhost (127.0.0.1 on RPC_PORT, default 9944) so its RPC traffic never
+# touches the public rpc-1/rpc-2 — that sharing caused the explorer self-DoS.
 #
 # Archive: keeps full historical state (--state-pruning archive) so the writer
 # can backfill / re-index any block. A pruned node discards old state and the
@@ -16,6 +16,7 @@
 #   cp .env.example .env      # fill RPC_NODE_KEY
 #   docker compose up -d
 #   # wait for full sync, then point the indexer at ws://127.0.0.1:9944
+#   # (use RPC_PORT instead of 9944 if you changed it)
 
 services:
   orbinum-indexer-rpc:
@@ -26,21 +27,15 @@ services:
     dns:
       - 8.8.8.8
       - 1.1.1.1
-    # TELEMETRY_URL reports to telemetry.orbinum.io by default (the dashboard
-    # that reads it is telemetry.orbinum.network). It uses
-    # `${VAR-default}`, NOT `${VAR:-default}`: only the hyphen-alone form
-    # treats an EMPTY TELEMETRY_URL as "opt out" rather than falling back to
-    # the default. A comment cannot go inside the `command: >` block below —
-    # folded scalars have no comments, so it would be passed as arguments.
     command: >
       --chain /chain-specs/testnet-spec.json
       --name "${RPC_NAME:-Orbinum-Indexer-RPC}"
       --base-path /data
-      --listen-addr /ip4/${P2P_BIND:-0.0.0.0}/tcp/30333
+      --listen-addr /ip4/${P2P_BIND:-0.0.0.0}/tcp/${P2P_PORT:-30333}
       --node-key ${RPC_NODE_KEY}
       ${RESERVED_NODES}
       ${TELEMETRY_URL---telemetry-url "wss://telemetry.orbinum.io/submit/ 0"}
-      --rpc-port 9944
+      --rpc-port ${RPC_PORT:-9944}
       --rpc-methods Safe
       --rpc-max-connections 200
       --state-pruning archive
@@ -50,7 +45,7 @@ services:
       --no-mdns
       ${NO_PRIVATE_IPV4}
       --prometheus-external
-      --prometheus-port 9615
+      --prometheus-port ${METRICS_PORT:-9615}
       --log info
     volumes:
       - indexer-rpc-data:/data

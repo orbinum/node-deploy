@@ -32,6 +32,12 @@ sudo ufw deny 9615         # Prometheus — not public
 sudo ufw enable
 ```
 
+> Using custom ports? These commands take the **defaults**. If you set
+> `P2P_PORT`, `RPC_PORT` or `METRICS_PORT` in `.env`, substitute them here —
+> the node runs with `network_mode: host`, so those are the real listening
+> sockets. `RPC_PORT` and `METRICS_PORT` must stay denied; only `P2P_PORT`
+> is public.
+
 Include both IPv4 **and** IPv6 ranges. If the server has a public IPv6 address,
 Cloudflare may reach the origin over IPv6 — allowing only v4 would silently drop
 that traffic. Check with `ip -6 addr | grep inet6`.
@@ -184,7 +190,7 @@ curl -s -H "Content-Type: application/json" \
 > for the RPC hostnames (skip managed rules + Super Bot Fight Mode).
 
 To bypass Cloudflare/Caddy and hit the node's RPC directly, run the curl
-**inside the container** against `localhost:9944`:
+**inside the container** against `localhost:9944` (or your `RPC_PORT`):
 
 ```bash
 docker exec orbinum-rpc-node curl -s -H "Content-Type: application/json" \

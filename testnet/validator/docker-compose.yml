@@ -6,12 +6,6 @@ services:
     dns:
       - 8.8.8.8
       - 1.1.1.1
-    # TELEMETRY_URL reports to telemetry.orbinum.io by default (the dashboard
-    # that reads it is telemetry.orbinum.network). It uses
-    # `${VAR-default}`, NOT `${VAR:-default}`: only the hyphen-alone form
-    # treats an EMPTY TELEMETRY_URL as "opt out" rather than falling back to
-    # the default. A comment cannot go inside the `command: >` block below —
-    # folded scalars have no comments, so it would be passed as arguments.
     command: >
       --chain /chain-specs/testnet-spec.json
       --name "${VALIDATOR_NAME:-Orbinum-Validator}"
@@ -24,6 +18,7 @@ services:
       ${TELEMETRY_URL---telemetry-url "wss://telemetry.orbinum.io/submit/ 1"}
       --rpc-port 9944
       --rpc-methods Unsafe
+      ${RPC_EXTERNAL}
       --no-mdns
       --prometheus-external
       --prometheus-port 9615
@@ -32,12 +27,9 @@ services:
       - ../chainspec/testnet-spec.json:/chain-specs/testnet-spec.json:ro
       - validator-data:/data
     ports:
-      - "${P2P_BIND:-0.0.0.0}:30333:30333"
-      # Métricas Prometheus. El nodo no elige IP de bind (--prometheus-external
-      # ata 0.0.0.0 DENTRO del contenedor), así que el bind del host es lo que
-      # limita la exposición. Ponlo en la IP privada para que 9615 no aparezca
-      # en la NIC pública. El default 127.0.0.1 falla cerrado.
-      - "${METRICS_BIND:-127.0.0.1}:9615:9615"
+      - "${P2P_BIND:-0.0.0.0}:${P2P_PORT:-30333}:30333"
+      - "${RPC_BIND:-127.0.0.1}:${RPC_PORT:-9944}:9944"
+      - "${METRICS_BIND:-127.0.0.1}:${METRICS_PORT:-9615}:9615"
     restart: unless-stopped
     labels:
       com.centurylinklabs.watchtower.enable: "true"
