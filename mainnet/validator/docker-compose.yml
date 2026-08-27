@@ -16,23 +16,26 @@ services:
       --chain /chain-specs/mainnet-spec.json
       --name "${VALIDATOR_NAME:-Orbinum-Validator}"
       --base-path /data
-      --listen-addr /ip4/0.0.0.0/tcp/30333
+      --listen-addr /ip4/0.0.0.0/tcp/${P2P_PORT:-30333}
       --validator
       --node-key ${VALIDATOR_NODE_KEY}
+      ${PUBLIC_ADDR}
+      ${RESERVED_NODES}
       ${TELEMETRY_URL---telemetry-url "wss://telemetry.orbinum.io/submit/ 1"}
       --rpc-port 9944
       --rpc-methods Unsafe
       ${RPC_EXTERNAL}
       --no-mdns
       --prometheus-external
-      --prometheus-port 9615
+      --prometheus-port ${METRICS_PORT:-9615}
       --log info
     volumes:
       - ../chainspec/mainnet-spec.json:/chain-specs/mainnet-spec.json:ro
       - validator-data:/data
     ports:
-      - "${P2P_BIND:-0.0.0.0}:${P2P_PORT:-30333}:30333"
+      - "${P2P_BIND:-0.0.0.0}:${P2P_PORT:-30333}:${P2P_PORT:-30333}"
       - "${RPC_BIND:-127.0.0.1}:${RPC_PORT:-9944}:9944"
+      - "${METRICS_BIND:-127.0.0.1}:${METRICS_PORT:-9615}:${METRICS_PORT:-9615}"
     restart: unless-stopped
     labels:
       com.centurylinklabs.watchtower.enable: "true"

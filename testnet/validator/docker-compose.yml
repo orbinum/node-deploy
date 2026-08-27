@@ -10,7 +10,7 @@ services:
       --chain /chain-specs/testnet-spec.json
       --name "${VALIDATOR_NAME:-Orbinum-Validator}"
       --base-path /data
-      --listen-addr /ip4/0.0.0.0/tcp/30333
+      --listen-addr /ip4/0.0.0.0/tcp/${P2P_PORT:-30333}
       --validator
       --node-key ${VALIDATOR_NODE_KEY}
       ${PUBLIC_ADDR}
@@ -27,7 +27,7 @@ services:
       - ../chainspec/testnet-spec.json:/chain-specs/testnet-spec.json:ro
       - validator-data:/data
     ports:
-      - "${P2P_BIND:-0.0.0.0}:${P2P_PORT:-30333}:30333"
+      - "${P2P_BIND:-0.0.0.0}:${P2P_PORT:-30333}:${P2P_PORT:-30333}"
       - "${RPC_BIND:-127.0.0.1}:${RPC_PORT:-9944}:9944"
       - "${METRICS_BIND:-127.0.0.1}:${METRICS_PORT:-9615}:9615"
     restart: unless-stopped

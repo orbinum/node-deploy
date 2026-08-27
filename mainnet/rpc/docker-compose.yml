@@ -17,10 +17,11 @@ services:
       --chain /chain-specs/mainnet-spec.json
       --name "${RPC_NAME:-Orbinum-RPC}"
       --base-path /data
-      --listen-addr /ip4/0.0.0.0/tcp/30333
+      --listen-addr /ip4/0.0.0.0/tcp/${P2P_PORT:-30333}
       --node-key ${RPC_NODE_KEY}
+      ${RESERVED_NODES}
       ${TELEMETRY_URL---telemetry-url "wss://telemetry.orbinum.io/submit/ 0"}
-      --rpc-port 9944
+      --rpc-port ${RPC_PORT:-9944}
       --rpc-cors all
       --rpc-external
       --rpc-methods Safe
@@ -30,7 +31,7 @@ services:
       --no-mdns
       --no-private-ipv4
       --prometheus-external
-      --prometheus-port 9615
+      --prometheus-port ${METRICS_PORT:-9615}
       --log info
     volumes:
       - rpc-node-data:/data
@@ -56,6 +57,7 @@ services:
     restart: unless-stopped
     environment:
       RPC_DOMAIN: ${RPC_DOMAIN:-rpc.example.invalid}
+      RPC_PORT: ${RPC_PORT:-9944}
     volumes:
       - ../../common/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./origin.pem:/etc/caddy/origin.pem:ro
