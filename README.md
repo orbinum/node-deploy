@@ -54,8 +54,35 @@ cp .env.example .env       # set VALIDATOR_NAME + VALIDATOR_NODE_KEY
 docker compose up -d
 ```
 
-Generate the node-key with `openssl rand -hex 32`. Session keys are inserted
-separately after the node is running (author-set via the node's Unsafe RPC).
+Generate the node-key with `openssl rand -hex 32`.
+
+Session keys come after the node is synced. Generate them **on the node itself**
+and register the public blob on-chain:
+
+```bash
+# 1. Generate — returns a 0x blob of 128 hex chars (Aura + GRANDPA)
+docker exec orbinum-validator curl -s -H 'Content-Type: application/json' \
+  -d '{"id":1,"jsonrpc":"2.0","method":"author_rotateKeys"}' \
+  http://localhost:9944
+
+# 2. Submit session.setKeys(keys = <blob>, proof = 0x00) from your validator
+#    account — Polkadot.js Apps, Developer → Extrinsics.
+
+# 3. Verify the keystore actually holds them
+docker exec orbinum-validator curl -s -H 'Content-Type: application/json' \
+  -d '{"id":1,"jsonrpc":"2.0","method":"author_hasSessionKeys","params":["<blob>"]}' \
+  http://localhost:9944
+```
+
+Step 3 must return `true`. Rotating on one host and registering from another
+leaves the chain holding keys no node can sign with — every other check passes and
+the validator silently never authors. `proof` is `0x00`, the SCALE encoding of an
+empty `Vec<u8>`; a bare `0x` fails to decode outside Polkadot.js Apps.
+
+Inside the container the RPC port is always `9944`. On the host it is whatever
+`RPC_PORT` you set (bound to `127.0.0.1`), so `docker exec` avoids the mismatch.
+
+Full walkthrough: [Run a Validator Node](https://docs.orbinum.net/validators/running-a-validator).
 
 ## Public RPC
 
