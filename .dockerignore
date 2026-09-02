@@ -10,8 +10,9 @@ node_modules/
 docs/build/
 docs/node_modules/
 
-# Git
-.git/
+# Git — .git/ is deliberately NOT excluded when the context is the `node` repo:
+# substrate's build script reads .git/HEAD to stamp the commit hash into `--version`.
+# Excluding it leaves every image reporting a bare version with no traceable commit.
 .gitignore
 
 # IDE

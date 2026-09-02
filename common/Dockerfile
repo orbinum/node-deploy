@@ -20,8 +20,21 @@ WORKDIR /orbinum
 # Copy source code
 COPY . .
 
+# Which Hyperbridge deployment the runtime targets. Compile-time constant: a testnet
+# image built without this ships mainnet's `Polkadot(3367)`, and since `is_allowed_proxy`
+# compares the whole SCALE variant with `==`, every proxied request is rejected — at
+# relay time, not at build or deploy time.
+#
+#   docker build --build-arg CARGO_FEATURES=hyperbridge-testnet ...   # testnet
+#   docker build ...                                                  # mainnet
+#
+# Verify the result instead of trusting the flag: the node repo ships
+# `scripts/verify-coprocessor.sh <testnet|mainnet>`.
+ARG CARGO_FEATURES=""
+
 # Build the node in release mode
-RUN cargo build --release --package orbinum-node
+RUN cargo build --release --package orbinum-node \
+    ${CARGO_FEATURES:+--features "$CARGO_FEATURES"}
 
 # Stage 2: Create minimal runtime image
 FROM debian:bookworm-slim

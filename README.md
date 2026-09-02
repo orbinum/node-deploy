@@ -188,6 +188,26 @@ the genesis state, so emptying it left the chain's genesis hash untouched.
 pin a tag or point at a locally-built image. Watchtower auto-updates the node
 container when a new image is published.
 
+**A testnet image needs `CARGO_FEATURES=hyperbridge-testnet`.** The Hyperbridge
+coprocessor is a compile-time constant: without the feature the runtime carries
+mainnet's `Polkadot(3367)`, and `is_allowed_proxy` compares the whole SCALE
+variant with `==`, so every proxied ISMP request is rejected. Nothing fails at
+build or deploy time — it surfaces when a relayer tries to work.
+
+```bash
+# testnet
+docker build -f common/Dockerfile --build-arg CARGO_FEATURES=hyperbridge-testnet \
+  -t orbinum-node:testnet ../node
+
+# mainnet
+docker build -f common/Dockerfile -t orbinum-node:mainnet ../node
+```
+
+Verify the result rather than trusting the flag — the `node` repo ships
+`scripts/verify-coprocessor.sh <testnet|mainnet> [binary]`, which reads the
+coprocessor back off a running node. Images published by the release workflow
+already get the right feature per environment.
+
 ## Chain specs
 
 This repo only **consumes** chain specs. The spec files under `<network>/chainspec/`
