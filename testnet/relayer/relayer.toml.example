@@ -1,0 +1,90 @@
+# Tesseract relayer — Orbinum <-> Hyperbridge on Paseo.
+#
+# TEMPLATE. Copy to `relayer.toml` on the box and fill the two `signer` lines; that copy
+# is gitignored and must stay off the repository.
+#
+#   cp relayer.toml.example relayer.toml
+#   $EDITOR relayer.toml      # fill both signers
+#
+# Tesseract does not expand environment variables in this file, so the secrets have to be
+# written in literally — hence the template/copy split rather than an `.env` entry.
+
+# ── Hyperbridge on Paseo ──────────────────────────────────────────────────────
+[hyperbridge]
+rpc_ws = "wss://gargantua.rpc.polytope.technology"
+# Hex-encoded sr25519 secret. Upstream describes this as the account that accrues
+# $BRIDGE rewards, and that is true for *message* relaying — but it earns nothing here.
+#
+# Rewards come from the relayer fee an application escrows when it dispatches a message,
+# paid out to whoever delivers it. Orbinum dispatches with `fee: Default::default()`
+# (`frame/ismp-messaging/src/outbound.rs`), so there is nothing escrowed and nothing to
+# claim. What this relayer actually does is exchange *consensus* proofs, which go through
+# `Ismp::handle_unsigned` — no signature, no nonce, no fee, no reward.
+#
+# So the key needs no balance, and setting it changes nothing today. It matters only if
+# Orbinum ever attaches a non-zero fee to attract third-party relayers.
+signer = "0x0000000000000000000000000000000000000000000000000000000000000000"
+
+[hyperbridge.consensus]
+type = "grandpa"
+# Hyperbridge is a parachain: its GRANDPA finality comes from the RELAY chain (Paseo),
+# not from Hyperbridge itself.
+rpc = "wss://pas-rpc.stakeworld.io"
+# Required, not optional: `HostConfig` has no default for it, and omitting it fails with
+# "missing field `slot_duration`" before the relayer connects to anything. 6000 on Paseo;
+# Polkadot mainnet would be 12000.
+slot_duration = 6000
+consensus_update_frequency = 60
+# Hyperbridge's para id on Paseo. Listing it is what makes the relayer ship proofs that
+# verify Hyperbridge *through* its relay's GRANDPA.
+para_ids = [4009]
+# How far ahead of the stored consensus state one proof may reach. The default is 2400
+# (`tesseract/consensus/grandpa/src/lib.rs:39`), and that is not enough to recover from
+# being behind: Paseo produces ~14400 blocks a day, so a relayer that can only advance
+# 2400 per cycle falls further behind every cycle and never converges. We hit exactly
+# that — the stored state sat at relay block 909397 while Paseo was at 974819, and the
+# HB -> Orbinum direction silently produced nothing for hours.
+#
+# 10000 covers a multi-hour outage. Beyond that the proof walks the range one block at a
+# time over RPC (`prover/src/lib.rs:248`), so raising it much further trades one failure
+# mode for a slow one.
+max_block_range = 10000
+
+# ── Orbinum ───────────────────────────────────────────────────────────────────
+[orbinum]
+type = "substrate"
+# The node in this same stack, over loopback. Deliberately not rpc-1: that endpoint sits
+# behind Cloudflare, which closes idle WebSockets, and the relayer's connection goes
+# quiet between proofs. It also runs `--rpc-methods Safe`, while Tesseract needs unsafe
+# methods.
+rpc_ws = "ws://127.0.0.1:9944"
+# Same as above: no balance needed, no reward accrued while our dispatch fee is zero.
+signer = "0x0000000000000000000000000000000000000000000000000000000000000000"
+# Our consensus state id ON Hyperbridge — 4 UTF-8 chars we chose. Distinct from the state
+# machine id (`SUBSTRATE-orbi`), though kept related for legibility.
+consensus_state_id = "ORBI"
+
+[orbinum.consensus]
+type = "grandpa"
+# Orbinum is standalone, so this points at Orbinum itself — the same local node.
+rpc = "ws://127.0.0.1:9944"
+slot_duration = 6000
+consensus_update_frequency = 60
+# Empty: we are not a relay chain with parachains to prove.
+para_ids = []
+
+# ── Watchdog ──────────────────────────────────────────────────────────────────
+[relayer]
+# Restart if either consensus client goes stale. A silently stalled relayer looks
+# identical to a quiet one, so this timeout is the only signal.
+#
+# 900s, not the 180s this started with: that was a guess, and it was wrong in the
+# direction that matters. Measured on 2026-09-07, the first Orbinum -> Hyperbridge proof
+# took ~3 min from startup, and Hyperbridge's BEEFY proofs coming back are slower to
+# build than our GRANDPA ones. At 180s the watchdog fired before the first inbound update
+# landed and restarted the relayer, which restarted the clock — a loop that never
+# completes.
+maximum_update_intervals = [
+    [{ state_id = "KUSAMA-4009", consensus_state_id = "PAS0" }, 900],
+    [{ state_id = "SUBSTRATE-orbi", consensus_state_id = "ORBI" }, 900],
+]

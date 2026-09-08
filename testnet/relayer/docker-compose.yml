@@ -1,0 +1,123 @@
+# Orbinum Testnet — Hyperbridge relayer, with its own dedicated node.
+#
+# Tesseract exchanges GRANDPA finality proofs with Hyperbridge so the two chains can
+# verify each other. It needs a long-lived WebSocket and unsafe RPC methods, and neither
+# fits the public endpoint: rpc-1 sits behind Cloudflare, which closes idle WebSockets,
+# and it runs `--rpc-methods Safe` as it should.
+#
+# So this stack carries its own node, same pattern as `indexer-rpc`:
+#
+#   - loopback only (no --rpc-external, no Caddy, no ports:) — `--rpc-methods Unsafe` is
+#     only acceptable because nothing outside this box can reach it
+#   - `--blocks-pruning archive` but NOT state-archive. `prove_finality` reads block
+#     justifications and headers, never historical state, so the state trie is the one
+#     thing this node can afford to prune — and it is the part that grows. The indexer's
+#     node is state-archive because it re-indexes arbitrary blocks; this one does not.
+#     Bodies stay because pruning them would take the justifications with them, and this
+#     node has no `GrandpaPruningFilter` to keep them.
+#   - separate from the indexer's node, so relayer traffic cannot starve the explorer
+#
+# Deploy:
+#   cp .env.example .env      # fill RPC_NODE_KEY and the two signer keys
+#   docker compose up -d
+#   # the relayer restarts on its own until the node finishes syncing
+#
+# Check it is working (the number must climb):
+#   curl -s -H 'Content-Type: application/json' \
+#     -d '{"jsonrpc":"2.0","id":1,"method":"ismp_queryStateMachineLatestHeight",
+#          "params":[{"state_id":"SUBSTRATE-orbi","consensus_state_id":"ORBI"}]}' \
+#     https://gargantua.rpc.polytope.technology
+
+services:
+  orbinum-relayer-rpc:
+    image: ${ORBINUM_IMAGE:-ghcr.io/orbinum/node:testnet-latest}
+    platform: linux/amd64
+    container_name: orbinum-relayer-rpc
+    network_mode: host
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    command: >
+      --chain /chain-specs/testnet-spec.json
+      --name "${RPC_NAME:-Orbinum-Relayer-RPC}"
+      --base-path /data
+      --listen-addr /ip4/${P2P_BIND:-0.0.0.0}/tcp/${P2P_PORT:-30333}
+      --node-key ${RPC_NODE_KEY}
+      ${RESERVED_NODES}
+      ${TELEMETRY_URL---telemetry-url "wss://telemetry.orbinum.io/submit/ 0"}
+      --rpc-port ${RPC_PORT:-9944}
+      --rpc-methods Unsafe
+      --rpc-max-connections 100
+      --in-peers ${IN_PEERS:-32}
+      --out-peers ${OUT_PEERS:-8}
+      --state-pruning ${RPC_STATE_PRUNING:-1000}
+      --blocks-pruning archive
+      --db-cache ${RPC_DB_CACHE:-512}
+      --trie-cache-size ${RPC_TRIE_CACHE:-67108864}
+      --no-mdns
+      ${NO_PRIVATE_IPV4}
+      --prometheus-external
+      --prometheus-port ${METRICS_PORT:-9615}
+      --log info
+    volumes:
+      - relayer-rpc-data:/data
+      - ../chainspec/testnet-spec.json:/chain-specs/testnet-spec.json:ro
+    restart: unless-stopped
+    mem_limit: ${RPC_MEM_LIMIT:-3g}
+    cpus: ${RPC_CPUS:-1.5}
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+      com.centurylinklabs.watchtower.scope: "relayer"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+  tesseract:
+    image: polytopelabs/tesseract:latest
+    platform: linux/amd64
+    container_name: orbinum-tesseract
+    # host networking so `ws://127.0.0.1:9944` reaches the node above without a bridge
+    # hop. The relayer's own listening surface is nil — it only makes outbound calls.
+    network_mode: host
+    depends_on:
+      - orbinum-relayer-rpc
+    command: >
+      --config=/data/relayer.toml
+      --db=/data/relayer.db
+    volumes:
+      - ./relayer.toml:/data/relayer.toml:ro
+      - tesseract-data:/data
+    restart: unless-stopped
+    mem_limit: ${TESSERACT_MEM_LIMIT:-2g}
+    cpus: ${TESSERACT_CPUS:-1.0}
+    # Not watchtower-managed: Tesseract is upstream's image on a floating `latest`, and a
+    # silent swap mid-flight would be harder to attribute than a deliberate `docker pull`.
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+  watchtower:
+    image: ghcr.io/nicholas-fedor/watchtower:latest
+    container_name: orbinum-watchtower-relayer
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      WATCHTOWER_POLL_INTERVAL: "300"
+      WATCHTOWER_LABEL_ENABLE: "true"
+      WATCHTOWER_SCOPE: "relayer"
+      WATCHTOWER_ROLLING_RESTART: "true"
+      WATCHTOWER_LOG_LEVEL: "info"
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"
+      com.centurylinklabs.watchtower.scope: "relayer"
+
+volumes:
+  relayer-rpc-data:
+  tesseract-data:

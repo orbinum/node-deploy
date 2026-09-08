@@ -1,6 +1,11 @@
 # Secrets and per-host config
 .env
+**/.env
 */*/.env
+
+# Tesseract relayer config — carries signer secrets in the clear, because Tesseract does
+# not expand environment variables. Only the .example template belongs in the repo.
+**/relayer.toml
 
 # TLS material (Cloudflare Origin Certificate)
 origin.pem
