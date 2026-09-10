@@ -24,25 +24,47 @@ mainnet/                same structure as testnet (spec is a placeholder for now
 Pick one directory — `<network>/<role>` — copy `.env.example` to `.env`, fill
 it, and run compose from inside that directory.
 
-## Authenticate with GHCR
+## GHCR — no login needed
 
-The node image is hosted on GitHub Container Registry. Log in once per host,
-before the first `docker compose pull` / `up` — otherwise the pull fails with
-`denied` or `unauthorized`.
+`ghcr.io/orbinum/node` is **public**. `docker compose pull` works with no
+credentials on a fresh host; nothing to configure.
 
-Create a **Personal Access Token (classic)** at
-<https://github.com/settings/tokens> with the `read:packages` scope, then:
+**If a pull fails with `denied` on a host that used to work**, the cause is a
+stored credential that has since expired — Docker keeps sending it instead of
+falling back to anonymous. Drop it:
 
 ```bash
-echo "ghp_xxxxxxxxxxxxxxxxxxxx" | docker login ghcr.io -u <github-username> --password-stdin
+docker logout ghcr.io
+docker compose pull
 ```
 
-Piping the token via `--password-stdin` keeps it out of your shell history.
-Docker stores the credential in `~/.docker/config.json`, so this survives
-reboots and Watchtower's automatic updates — no need to repeat it.
+This is not hypothetical: an expired token in `~/.docker/config.json` blocked
+the pull on every node during the `v0.1.0-rc.23` recovery, which is why the
+image is public and no host stores a token any more.
 
-> Give the token only `read:packages`. A deploy host never needs write access
-> to the registry, and the token sits on disk in plain text.
+<details>
+<summary>Only if the registry actually asks for credentials</summary>
+
+If a pull still fails with `denied` **after** `docker logout` — the package was
+made private again, or you are pulling a different image — authenticate with a
+**classic** PAT scoped to `read:packages` only:
+
+```bash
+read -rs GHCR_PAT   # paste the token; it does not echo and stays out of history
+echo "$GHCR_PAT" | docker login ghcr.io -u <github-username> --password-stdin
+unset GHCR_PAT
+```
+
+Fine-grained tokens do not work with GHCR unless the org grants Packages access
+explicitly; a classic token is the reliable one.
+
+The credential lands in `~/.docker/config.json` as reversible base64, not a
+hash, and it does not expire on its own — so it becomes a liability the day it
+is revoked or rotated: Docker keeps sending it and every pull fails with
+`denied` while the image itself is fine. If you add one, note where, so it can
+be removed rather than debugged later.
+
+</details>
 
 ## Validator
 
@@ -187,6 +209,23 @@ the genesis state, so emptying it left the chain's genesis hash untouched.
 `ghcr.io/orbinum/node:<network>-latest`; override `ORBINUM_IMAGE` in `.env` to
 pin a tag or point at a locally-built image. Watchtower auto-updates the node
 container when a new image is published.
+
+**Floating tag or pinned version — pick knowingly.** Following `<network>-latest`
+means every release lands on your node within five minutes of being published,
+good or bad: `v0.1.0-rc.23` shipped a binary without its executable bit, and every
+node on the floating tag was recreated into a container that could not start.
+Pinning (`ORBINUM_IMAGE=ghcr.io/orbinum/node:0.1.0-rc.24`) means you move when you
+decide to. Both are legitimate; the `.env.example` files say which they default to.
+
+**If a node ever ends up `Created` or `Restarting` after an update**, Watchtower now
+recovers it on its own once a fixed image is published under the same tag
+(`WATCHTOWER_INCLUDE_STOPPED`, `WATCHTOWER_REVIVE_STOPPED`,
+`WATCHTOWER_INCLUDE_RESTARTING`). Before this, Watchtower scanned only running
+containers, so a node killed by a bad image was invisible to it and needed a human.
+The previous image is also kept on disk (`WATCHTOWER_CLEANUP=false`) so rolling back
+is one line: set `ORBINUM_IMAGE` to it and `docker compose up -d <node-service>`.
+Stacks deployed before these flags existed need one `git pull && docker compose up -d`
+to pick them up — after that, no more visits.
 
 **A testnet image needs `CARGO_FEATURES=hyperbridge-testnet`.** The Hyperbridge
 coprocessor is a compile-time constant: without the feature the runtime carries

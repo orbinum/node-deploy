@@ -1,3 +1,18 @@
+# Orbinum Testnet — public RPC node.
+#
+# What the public endpoint (rpc-1, rpc-2, …) serves: wallets, the explorer and
+# anyone querying the chain. Caddy terminates HTTPS/WSS in front of it with a
+# Cloudflare Origin Certificate, so the node itself speaks plain HTTP on
+# RPC_PORT and is never exposed directly.
+#
+# `--rpc-methods Safe`: a public endpoint must not offer author_rotateKeys,
+# offchain storage or the other unsafe namespaces. Archive on both axes
+# (--state-pruning / --blocks-pruning) so historical queries answer.
+#
+# Three containers, one purpose: the node, Caddy for TLS, and Watchtower to
+# keep the image current. See the Watchtower block for how a failed update
+# recovers on its own.
+
 services:
   orbinum-rpc-node:
     image: ${ORBINUM_IMAGE:-ghcr.io/orbinum/node:testnet-latest}
@@ -33,6 +48,18 @@ services:
       - rpc-node-data:/data
       - ../chainspec/testnet-spec.json:/chain-specs/testnet-spec.json:ro
     restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          curl -sf -m 3
+          -H 'Content-Type: application/json'
+          -d '{"jsonrpc":"2.0","id":1,"method":"system_health"}'
+          http://127.0.0.1:${RPC_PORT:-9944} >/dev/null
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
     mem_limit: ${RPC_MEM_LIMIT:-6g}
     cpus: ${RPC_CPUS:-1.5}
     labels:
@@ -73,6 +100,17 @@ services:
       WATCHTOWER_POLL_INTERVAL: "300"
       WATCHTOWER_LABEL_ENABLE: "true"
       WATCHTOWER_ROLLING_RESTART: "true"
+      # A container a bad image left `created` or `restarting` is invisible to a default
+      # Watchtower — it scans running containers only — so it stays down until a human
+      # visits the host. That is what rc.23 cost. These three make it part of the scan
+      # and start it once a fixed image is published under the same tag.
+      WATCHTOWER_INCLUDE_STOPPED: "true"
+      WATCHTOWER_REVIVE_STOPPED: "true"
+      WATCHTOWER_INCLUDE_RESTARTING: "true"
+      # Keep the previous image on disk. Cleanup deleted it during the rc.23 rollout,
+      # which is what turned "roll back with one command" into "no way back": the tag
+      # served a broken image and the good one was gone.
+      WATCHTOWER_CLEANUP: "false"
       WATCHTOWER_LOG_LEVEL: "info"
     labels:
       com.centurylinklabs.watchtower.enable: "false"

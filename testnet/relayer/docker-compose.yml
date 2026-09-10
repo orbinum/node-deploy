@@ -63,6 +63,18 @@ services:
       - relayer-rpc-data:/data
       - ../chainspec/testnet-spec.json:/chain-specs/testnet-spec.json:ro
     restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          curl -sf -m 3
+          -H 'Content-Type: application/json'
+          -d '{"jsonrpc":"2.0","id":1,"method":"system_health"}'
+          http://127.0.0.1:${RPC_PORT:-9944} >/dev/null
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
     mem_limit: ${RPC_MEM_LIMIT:-3g}
     cpus: ${RPC_CPUS:-1.5}
     labels:
@@ -113,6 +125,17 @@ services:
       WATCHTOWER_LABEL_ENABLE: "true"
       WATCHTOWER_SCOPE: "relayer"
       WATCHTOWER_ROLLING_RESTART: "true"
+      # A container a bad image left `created` or `restarting` is invisible to a default
+      # Watchtower — it scans running containers only — so it stays down until a human
+      # visits the host. That is what rc.23 cost. These three make it part of the scan
+      # and start it once a fixed image is published under the same tag.
+      WATCHTOWER_INCLUDE_STOPPED: "true"
+      WATCHTOWER_REVIVE_STOPPED: "true"
+      WATCHTOWER_INCLUDE_RESTARTING: "true"
+      # Keep the previous image on disk. Cleanup deleted it during the rc.23 rollout,
+      # which is what turned "roll back with one command" into "no way back": the tag
+      # served a broken image and the good one was gone.
+      WATCHTOWER_CLEANUP: "false"
       WATCHTOWER_LOG_LEVEL: "info"
     labels:
       com.centurylinklabs.watchtower.enable: "false"
