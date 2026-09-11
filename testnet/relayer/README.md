@@ -45,6 +45,40 @@ message is dropped.
 Verified by dry-running the same message against Gargantua twice: Keccak →
 `Ismp.InvalidMessage`, Blake2 → success.
 
+## Delivering to an EVM chain
+
+The destination's RPC **must support `debug_traceCall`**. Tesseract simulates every message
+before submitting it; when that call errors it leaves `successful_execution = false`, which is
+indistinguishable from a genuine revert, and the message is dropped with a bare
+`Skipping Failed tx` (`tesseract/messaging/evm/src/provider.rs:936,987-992`).
+
+`eth_chainId` does not tell you whether an endpoint traces — many public RPCs answer the first
+and refuse the second. Check explicitly:
+
+```bash
+curl -s -X POST -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"debug_traceCall","params":[{"to":"0x0000000000000000000000000000000000000000","data":"0x"},"latest",{"tracer":"callTracer"}]}' \
+  <endpoint>
+```
+
+A `-32601` there means every message to that chain will be silently skipped while consensus
+and rotation proofs keep landing — those take a different branch (`outbound.rs:361-377`) and are
+never simulated. That asymmetry is the tell: rotations delivering while messages never do.
+
+### Confirming a message actually executed
+
+Three storage reads, one per leg, and the last one is on the destination chain:
+
+| Leg                             | Where                    | Key                                              |
+| ------------------------------- | ------------------------ | ------------------------------------------------ |
+| dispatched                      | Orbinum child trie       | `RequestCommitments ++ commitment`               |
+| accepted by Hyperbridge         | Gargantua child trie     | `RequestReceipts ++ commitment`                  |
+| **executed on the destination** | EvmHost on the EVM chain | `PostRequestHandled` log, `topic1 == commitment` |
+
+Only the third proves execution. A consumer that checks the first two alone reports a delivered
+message as still in flight — as both our explorer and Hyperbridge's own did, the latter returning
+`totalCount: 0` for commitments that had already executed on BSC.
+
 ## Deploy
 
 ```bash

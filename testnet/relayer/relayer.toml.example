@@ -142,12 +142,23 @@ para_ids = []
 # and it is why messages to EVM-97 stop at Hyperbridge.
 #[bsc-testnet]
 #type = "evm"
-# Both verified to answer eth_chainId with 0x61 (97). Two, so one going down does not
-# stall delivery.
-#rpc_urls = [
-#    "https://bsc-testnet-rpc.publicnode.com",
-#    "https://data-seed-prebsc-1-s1.binance.org:8545",
-#]
+# MUST support `debug_traceCall`. Tesseract simulates every message before sending it
+# (`tesseract/messaging/evm/src/provider.rs:936`) and, when the call errors, leaves
+# `successful_execution = false` — indistinguishable from a real revert (`provider.rs:987-992`).
+# The message is then dropped with a bare `Skipping Failed tx` and nothing says why.
+#
+# Checking an endpoint with `eth_chainId` does NOT catch this: both of these answer it,
+# but only the second traces.
+#   https://bsc-testnet-rpc.publicnode.com          -32601, method not available
+#   https://data-seed-prebsc-1-s1.binance.org:8545  works
+# Verify before trusting an endpoint:
+#   curl -s -X POST -H 'Content-Type: application/json' \
+#     -d '{"jsonrpc":"2.0","id":1,"method":"debug_traceCall","params":[{"to":"0x0000000000000000000000000000000000000000","data":"0x"},"latest",{"tracer":"callTracer"}]}' \
+#     <endpoint>
+#
+# One entry, not two: a tracing-capable endpoint mixed with one that is not would drop
+# messages intermittently, which is far harder to attribute than a steady failure.
+#rpc_urls = ["https://data-seed-prebsc-1-s1.binance.org:8545"]
 # Hex-encoded secp256k1 private key, 0x-prefixed. Must hold testnet BNB.
 #signer = "0x0000000000000000000000000000000000000000000000000000000000000000"
 
