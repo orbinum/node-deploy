@@ -116,6 +116,41 @@ consensus_update_frequency = 60
 # Empty: we are not a relay chain with parachains to prove.
 para_ids = []
 
+# ── BSC testnet, the onward hop ───────────────────────────────────────────────
+# Without a section for the destination chain, Hyperbridge accepts and re-dispatches our
+# POST and then nothing carries it further: Tesseract's outbound fan-out only covers EVM
+# destinations that have a signer (`tesseract/relayer/src/cli.rs:284-298`). The message
+# sits on Hyperbridge as "in flight" forever, which is exactly what the explorer shows.
+#
+# Everything but the RPC and the key is derived from the chain id (`eth_chainId`) via
+# tesseract's registry: host `0x9AA003594d59C62EE17A73A569Fd7B1DbdBd71E1` and consensus
+# state id `BSC0` for chain 97 (`tesseract/messaging/evm/src/registry.rs:30,64`) — both
+# match what Gargantua itself reports for EVM-97, so there is nothing to hardcode.
+#
+# UNLIKE THE TWO SIGNERS ABOVE, THIS KEY NEEDS FUNDS. Delivering to an EVM chain is a real
+# transaction: the relayer pays BSC testnet gas out of this account. An unfunded key means
+# deliveries fail at submission rather than being skipped, which at least is visible.
+# Faucet: https://www.bnbchain.org/en/testnet-faucet
+#
+# Our zero dispatch fee is NOT a blocker here, though it looks like one: the relayer skips
+# unprofitable messages, but `minimum_profit_percentage` defaults to 0 and that is a
+# special case meaning "relay everything for free" — it sets the perceived fee to U256::MAX
+# (`tesseract/messaging/messaging/src/events.rs:543-545`). Set it non-zero in `[relayer]`
+# only if this relayer should start refusing messages that do not pay for their own gas.
+#
+# Leave the whole section commented out to stay inbound-only — that is the current state,
+# and it is why messages to EVM-97 stop at Hyperbridge.
+#[bsc-testnet]
+#type = "evm"
+# Both verified to answer eth_chainId with 0x61 (97). Two, so one going down does not
+# stall delivery.
+#rpc_urls = [
+#    "https://bsc-testnet-rpc.publicnode.com",
+#    "https://data-seed-prebsc-1-s1.binance.org:8545",
+#]
+# Hex-encoded secp256k1 private key, 0x-prefixed. Must hold testnet BNB.
+#signer = "0x0000000000000000000000000000000000000000000000000000000000000000"
+
 # ── Watchdog ──────────────────────────────────────────────────────────────────
 [relayer]
 # Restart if either consensus client goes stale. A silently stalled relayer looks
