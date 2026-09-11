@@ -1,56 +1,42 @@
 # Hyperbridge relayer
 
-Tesseract plus a dedicated Orbinum node, so the two chains can verify each other's
-finality proofs.
+Tesseract, so Orbinum and Hyperbridge can verify each other's finality proofs and carry
+ISMP messages between them.
 
-## Why a dedicated node
+It holds no authority: a forged proof is rejected by verification on the receiving side.
+Postman, not notary. Anyone may run one.
 
-The relayer holds a long-lived WebSocket and calls RPC methods outside Substrate's Safe
-set. Neither works against `rpc-1`:
+## No node in this stack
 
-|                       | rpc-1                        | this node               |
-| --------------------- | ---------------------------- | ----------------------- |
-| Fronted by Cloudflare | yes — closes idle WebSockets | no                      |
-| RPC methods           | `Safe`                       | `Unsafe`, loopback only |
-| Serves                | the public                   | one consumer            |
+Tesseract reaches Orbinum over the network. The endpoint is set in `relayer.toml`, and it
+**must be an archive node** — `relayer.toml.example` lists which ones qualify.
 
-Running Tesseract against `wss://rpc-1.testnet.orbinum.io` dropped its connection every
-few minutes and stalled the proof cycle. Same reasoning as `indexer-rpc` — a consumer
-that needs something the public endpoint should not offer gets its own node.
+### Why archive, and why the failure is silent
 
-`--rpc-methods Unsafe` is only acceptable because the RPC is bound to loopback: no
-`--rpc-external`, no `ports:`, no reverse proxy. Nothing outside the box can reach it.
+`ismp_queryEvents` is how Tesseract finds the messages Orbinum dispatches. It does not
+read stored events: it **re-executes the runtime** at each block to read `System::Events`,
+which is cleared at the start of every block (`pallet-ismp-rpc` → `block_events` →
+`read_events_no_consensus`).
 
-## Pruning
+A node without the state for a block returns an **empty list and no error**. The relayer
+logs `no new messages` over ranges that did contain them, forwards nothing, and looks
+healthy throughout — consensus proofs keep flowing, because those need no historical
+state.
 
-Not a full archive node, unlike `indexer-rpc`:
+This stack used to run its own node with `--state-pruning 1000`, chosen precisely because
+GRANDPA proving only needs justifications and headers. True for consensus, false for
+messaging. Consensus flowed for weeks while every ISMP message was dropped. Rather than
+make that node archive — a full resync and a second archive node to maintain — it was
+removed, since the fleet already has archive nodes.
 
-```
---state-pruning 1000        # the relayer never reads historical state
---blocks-pruning archive    # justifications must survive
-```
-
-`prove_finality` reads block justifications and headers, never the historical state
-trie — and the state trie is the part that grows without bound. Pruning it is what keeps
-this box small.
-
-Bodies stay because pruning them takes the justifications with them, and this node has no
-`GrandpaPruningFilter` to hold them back. Bodies are far smaller than state, so the
-trade is worth it.
-
-One consequence: if the relayer is down long enough, it asks for headers from a range
-that no longer exists, and the proof cycle cannot resume from where it left off. The cap
-upstream is `MAX_UNKNOWN_HEADERS = 100_000` — roughly a week at 6s blocks. Longer than
-that, wipe the volume and let the node resync.
+The trade: the relayer now depends on another box being reachable.
 
 ## Deploy
 
 ```bash
 cp .env.example .env
-$EDITOR .env                       # RPC_NODE_KEY
-
 cp relayer.toml.example relayer.toml
-$EDITOR relayer.toml               # both signer lines
+$EDITOR relayer.toml               # both signer lines, and the archive node's address
 
 docker compose up -d
 ```
@@ -58,8 +44,8 @@ docker compose up -d
 `relayer.toml` is gitignored — it carries the signer secrets in the clear, because
 Tesseract does not expand environment variables in its config.
 
-Tesseract restarts on its own until the node has synced enough to answer. That is
-expected on a fresh box; the node has to catch up first.
+Tesseract restarts on its own until the node it points at can answer — expected while
+that node is still syncing, or before it has been opened to this box.
 
 ## Generating the signers
 
@@ -94,12 +80,23 @@ GRANDPA proofs. In the logs:
 docker logs -f orbinum-tesseract 2>&1 | grep "Transmitting consensus proof"
 ```
 
-The reverse — Hyperbridge's height on our chain — needs a **BEEFY prover** running
-against Gargantua, which is a separate operator role and a separate binary. This relayer
-only consumes proofs already accepted into Hyperbridge's offchain storage, so that
-direction stays empty until a prover produces them.
+The reverse direction — Hyperbridge's height on our chain — is read from whichever node
+this relayer points at (measured 2026-09-09: `KUSAMA-4009/PAS0` at height 10403562,
+74s old):
+
+```bash
+curl -s -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"ismp_queryStateMachineLatestHeight",
+       "params":[{"state_id":"KUSAMA-4009","consensus_state_id":"PAS0"}]}' \
+  http://10.0.0.10:9944
+```
+
+Both halves matter and neither is visible from one side alone: our proofs landing on
+Hyperbridge can only be read from Gargantua, theirs landing on us only from our node.
+That is what the exporter below measures.
 
 ## Ports
 
-Defaults collide with any other node on the same box. Change `P2P_PORT`, `RPC_PORT` and
-`METRICS_PORT` in `.env` if this shares a machine with a validator or the indexer.
+This stack binds nothing. Tesseract only makes outbound connections — to Hyperbridge,
+and to the node that serves Orbinum — so there is no port to collide with a validator or
+an indexer sharing the box, and no firewall rule to add here.

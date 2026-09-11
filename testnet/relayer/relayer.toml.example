@@ -6,8 +6,13 @@
 #   cp relayer.toml.example relayer.toml
 #   $EDITOR relayer.toml      # fill both signers
 #
-# Tesseract does not expand environment variables in this file, so the secrets have to be
-# written in literally — hence the template/copy split rather than an `.env` entry.
+# Tesseract does not expand environment variables in this file — it reads it and parses
+# it as TOML, nothing more — so every value here is literal. That is why the secrets live
+# in a gitignored copy instead of `.env`, and why the RPC endpoints below are written out
+# rather than templated.
+#
+# The one value most likely to need changing is `[orbinum].rpc_ws`: it must point at an
+# ARCHIVE node, and this stack no longer runs one of its own. See the note there.
 
 # ── Hyperbridge on Paseo ──────────────────────────────────────────────────────
 [hyperbridge]
@@ -53,12 +58,34 @@ max_block_range = 10000
 # ── Orbinum ───────────────────────────────────────────────────────────────────
 [orbinum]
 type = "substrate"
-# The node in this same stack, over loopback. Deliberately not rpc-1: that endpoint sits
-# behind Cloudflare, which closes idle WebSockets, and the relayer's connection goes
-# quiet between proofs. It also runs `--rpc-methods Safe`, while Tesseract needs unsafe
-# methods.
-rpc_ws = "ws://127.0.0.1:9944"
-# Same as above: no balance needed, no reward accrued while our dispatch fee is zero.
+# MUST be an ARCHIVE node, and this stack no longer runs one — pick an existing node and
+# reach it over the private network.
+#
+#   ws://10.0.0.10:9944   rpc-1. Works today, no changes needed: it is archive, host
+#                         networking already binds it on the private interface, and going
+#                         by private IP skips the Cloudflare problem below. Fine to prove
+#                         the bridge works; not somewhere to leave it, because rpc-1 also
+#                         serves the explorer and the public, and a second heavy consumer
+#                         on it is what caused the explorer self-DoS.
+#
+#   ws://10.0.0.30:9944   the indexer's node. The right long-term home — a private node
+#                         with one other consumer — but it is loopback-only until that
+#                         box opts in (RPC_EXTERNAL in its .env.example, plus a firewall
+#                         rule keeping 9944 off the public interface).
+#
+# WHY ARCHIVE. Tesseract finds our outbound messages with `ismp_queryEvents`, and that
+# RPC does not read stored events: it re-executes the runtime at each block to read
+# `System::Events`, which is cleared at the start of every block (`pallet-ismp-rpc` ->
+# `block_events` -> `read_events_no_consensus`). A node without the state for a block
+# returns an EMPTY list and NO error. The relayer then logs "no new messages" over ranges
+# that did contain them, forwards nothing, and looks healthy the whole time — consensus
+# proofs keep flowing, because those need no historical state.
+#
+# `wss://rpc-1.testnet.orbinum.io` is the same node as 10.0.0.10 but the wrong way in:
+# Cloudflare closes idle WebSockets, and this connection goes quiet between proofs.
+rpc_ws = "ws://10.0.0.10:9944"
+# Same as the Hyperbridge signer above: no balance needed, nothing accrues while our
+# dispatch fee is zero.
 signer = "0x0000000000000000000000000000000000000000000000000000000000000000"
 # Our consensus state id ON Hyperbridge — 4 UTF-8 chars we chose. Distinct from the state
 # machine id (`SUBSTRATE-orbi`), though kept related for legibility.
@@ -66,8 +93,13 @@ consensus_state_id = "ORBI"
 
 [orbinum.consensus]
 type = "grandpa"
-# Orbinum is standalone, so this points at Orbinum itself — the same local node.
-rpc = "ws://127.0.0.1:9944"
+# Orbinum is standalone, so this points at Orbinum itself. Consensus proving is the
+# undemanding half — justifications and headers, no historical state — so any synced node
+# would do; it shares the endpoint above only to keep one address to change.
+#
+# `grandpa_proveFinality` works under `--rpc-methods Safe` (verified against a live Safe
+# node), so nothing here needs unsafe RPC either.
+rpc = "ws://10.0.0.10:9944"
 slot_duration = 6000
 consensus_update_frequency = 60
 # Empty: we are not a relay chain with parachains to prove.
