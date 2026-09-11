@@ -31,6 +31,20 @@ removed, since the fleet already has archive nodes.
 
 The trade: the relayer now depends on another box being reachable.
 
+## The `hashing` field is not optional
+
+`[orbinum].hashing = "Blake2"` in `relayer.toml`. Omit it and Tesseract defaults to Keccak
+(`tesseract/messaging/substrate/src/lib.rs:200`), builds every membership proof with the
+wrong hasher, and Hyperbridge rejects them as `Ismp.InvalidMessage`.
+
+Nothing says so. Startup succeeds, consensus proofs keep flowing — they carry no trie
+proof — and the only trace is `Skipping Failed tx` in the log, because Tesseract discards
+the result of its own dry run without printing it. The bridge looks healthy while every
+message is dropped.
+
+Verified by dry-running the same message against Gargantua twice: Keccak →
+`Ismp.InvalidMessage`, Blake2 → success.
+
 ## Deploy
 
 ```bash

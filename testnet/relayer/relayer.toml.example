@@ -90,6 +90,17 @@ signer = "0x0000000000000000000000000000000000000000000000000000000000000000"
 # Our consensus state id ON Hyperbridge — 4 UTF-8 chars we chose. Distinct from the state
 # machine id (`SUBSTRATE-orbi`), though kept related for legibility.
 consensus_state_id = "ORBI"
+# REQUIRED, and silently wrong when omitted. Tesseract defaults to Keccak
+# (`tesseract/messaging/substrate/src/lib.rs:200`, `.unwrap_or(HashAlgorithm::Keccak)`),
+# but Orbinum's trie is BLAKE2 like any stock Substrate chain. The mismatch does not fail
+# at startup or produce an error in the logs: the membership proof is built with the wrong
+# hasher, Hyperbridge rejects it as `Ismp.InvalidMessage`, and Tesseract's dry run turns
+# that into a bare `Skipping Failed tx`. Consensus is unaffected, so the relayer looks
+# healthy while every message is dropped.
+#
+# Verified by dry-running the same message twice against Gargantua: Keccak ->
+# Ismp.InvalidMessage, Blake2 -> success.
+hashing = "Blake2"
 
 [orbinum.consensus]
 type = "grandpa"
