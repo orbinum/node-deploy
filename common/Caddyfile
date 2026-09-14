@@ -11,8 +11,26 @@
 # connection per client and never recycles, so client count passes straight
 # through to the node: enough concurrent browsers exhaust --rpc-max-connections
 # and the node starts answering "Too many connections" to everyone, including
-# localhost. The two caps sum to 1900, comfortably under the node's 5000, so
-# saturation is impossible no matter how much traffic arrives.
+# localhost.
+#
+# The caps are PER IMPORT, not per snippet, and that is the arithmetic that was
+# wrong here until 2026-09-14. Each snippet is imported twice — once for the
+# Cloudflare-proxied branch and once for direct origin — so the real ceiling is
+# 1500+1500+400+400 = 3800, not the 1900 this comment used to claim. Verify with:
+#
+#   caddy adapt --config Caddyfile | grep -o '"max_conns_per_host":[0-9]*'
+#
+# 3800 is under 5000 on paper, but WebSocket pools do not recycle on their own:
+# a closed laptop or a killed tab leaves the upstream half open with no request
+# boundary to end it, so the count only rises. Sustained WS traffic plus HTTP
+# reached the node's limit and it answered "Too many connections" to everyone —
+# including the ISMP relayer, which lost its subscription for 38 minutes until
+# `docker restart orbinum-caddy` reset the pools.
+#
+# Two changes keep it under control: the WS caps are halved so all four pools
+# together (1500) stay far below the node's 5000 even when every slot is held,
+# and `keepalive_interval` makes the kernel probe idle upstreams so a vanished
+# client is reaped instead of holding its slot forever.
 
 # WebSocket: each subscription is a long-lived 1:1 stream that cannot be pooled,
 # so the cap has to cover the real concurrent-socket count.
@@ -24,7 +42,33 @@
 		# loop. -1 disables buffering so frames pass through as they arrive.
 		flush_interval -1
 		transport http {
-			max_conns_per_host 1500
+			max_conns_per_host 500
+
+			# The cap alone is not enough, and 2026-09-14 is the proof: the pool
+			# filled and stayed full until `docker restart orbinum-caddy`, taking
+			# the ISMP relayer down with it for 38 minutes. The node was never the
+			# constraint — it allows 5000 and the two caps sum to 1900 — so the
+			# exhaustion was Caddy's own pool, and the "Too many connections" text
+			# clients saw was the node's error propagating from a slot that never
+			# came free.
+			#
+			# A WebSocket has no request boundary, so nothing ever tells Caddy the
+			# client is gone: a closed laptop, a dropped mobile network or a killed
+			# tab leaves the upstream half open, holding its slot forever. The count
+			# only rises. That is an accumulation bug — it worsens with uptime, not
+			# with load, which is why it survived every capacity estimate.
+			#
+			# TCP keepalives are what close them. The probes travel on the socket
+			# itself, so a peer that has silently vanished fails to answer and the
+			# connection is reaped instead of leaking. 30s detects a dead client
+			# within roughly a minute while being far too quiet to disturb a healthy
+			# subscription, which sees traffic on every block anyway.
+			keepalive_interval 30s
+
+			# Bound the connect attempt too. Without it a node that accepts the TCP
+			# handshake but never completes the upgrade — starting, or mid-restart —
+			# holds a slot for the OS default, minutes, for every client retrying.
+			dial_timeout 10s
 		}
 		header_down -Access-Control-Allow-Origin
 		header_down -Access-Control-Allow-Methods
@@ -43,6 +87,11 @@
 			max_conns_per_host 400
 			keepalive_idle_conns 100
 			keepalive 60s
+			# Same reason as the WS side: a node that accepts the handshake but
+			# never answers must not hold a pool slot for the OS default. This
+			# side already recycles — `keepalive 60s` retires idle connections —
+			# which is why it was not what fell over on 2026-09-14.
+			dial_timeout 10s
 		}
 		header_down -Access-Control-Allow-Origin
 		header_down -Access-Control-Allow-Methods
