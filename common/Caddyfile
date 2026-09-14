@@ -1,73 +1,71 @@
+# Reverse proxy for the public RPC endpoint.
+#
+# Caddy terminates TLS, owns CORS, rate-limits per client IP and pools upstream
+# connections to the node. Two upstream snippets — one for WebSocket, one for
+# HTTP JSON-RPC — because the two have opposite pooling needs.
+#
+# ── Deploying a change to this file ─────────────────────────────────────────
+#
+#   docker compose up -d --force-recreate caddy
+#
+# `--force-recreate`, never restart or reload. The file is bind-mounted and
+# `git pull` replaces it rather than editing in place, so the old inode stays
+# mounted and the container keeps serving the previous config. Confirm the
+# container agrees with the host before believing a deploy landed — different
+# line numbers mean different files:
+#
+#   grep -n max_conns_per_host common/Caddyfile
+#   docker compose exec caddy grep -n max_conns_per_host /etc/caddy/Caddyfile
+#
+# ── The connection budget ───────────────────────────────────────────────────
+#
+# `max_conns_per_host` applies PER IMPORT, not per snippet, and each snippet is
+# imported twice: once for the Cloudflare-proxied branch, once for direct
+# origin. Four transport blocks, so the ceiling is 500+500+400+400 = 1800
+# against the node's --rpc-max-connections 5000. Check it, do not assume it:
+#
+#   caddy adapt --config Caddyfile | grep -o '"max_conns_per_host":[0-9]*'
+#
+# `tests/test_caddy_conn_cap.py` asserts the sum stays under the node's limit.
+#
+# Getting this wrong is what caused the 2026-09-14 outage: the caps were 1500
+# each, the real ceiling was 3800 rather than the 1900 a stale comment claimed,
+# and long-lived WebSockets reached the node's limit. The node then answered
+# "Too many connections" to everyone — including the ISMP relayer, which lost
+# its subscription for 38 minutes.
+
 # caddy-ratelimit is not a standard directive, so it must be ordered explicitly.
 {
 	order rate_limit before basic_auth
 }
 
-# Proxy to the node, stripping its CORS headers so only Caddy's single copy
-# survives (the node also emits CORS via --rpc-cors all; duplicates make the
-# browser reject the response with "multiple values '*, *'").
-#
-# Both snippets cap max_conns_per_host. Without a cap Caddy opens one upstream
-# connection per client and never recycles, so client count passes straight
-# through to the node: enough concurrent browsers exhaust --rpc-max-connections
-# and the node starts answering "Too many connections" to everyone, including
-# localhost.
-#
-# The caps are PER IMPORT, not per snippet, and that is the arithmetic that was
-# wrong here until 2026-09-14. Each snippet is imported twice — once for the
-# Cloudflare-proxied branch and once for direct origin — so the real ceiling is
-# 1500+1500+400+400 = 3800, not the 1900 this comment used to claim. Verify with:
-#
-#   caddy adapt --config Caddyfile | grep -o '"max_conns_per_host":[0-9]*'
-#
-# 3800 is under 5000 on paper, but WebSocket pools do not recycle on their own:
-# a closed laptop or a killed tab leaves the upstream half open with no request
-# boundary to end it, so the count only rises. Sustained WS traffic plus HTTP
-# reached the node's limit and it answered "Too many connections" to everyone —
-# including the ISMP relayer, which lost its subscription for 38 minutes until
-# `docker restart orbinum-caddy` reset the pools.
-#
-# Two changes keep it under control: the WS caps are halved so all four pools
-# together (1500) stay far below the node's 5000 even when every slot is held,
-# and `keepalive_interval` makes the kernel probe idle upstreams so a vanished
-# client is reaped instead of holding its slot forever.
+# Both snippets strip the node's CORS headers so only Caddy's single copy
+# survives — the node also emits CORS via --rpc-cors all, and duplicates make
+# the browser reject the response with "multiple values '*, *'".
 
-# WebSocket: each subscription is a long-lived 1:1 stream that cannot be pooled,
-# so the cap has to cover the real concurrent-socket count.
+# WebSocket: long-lived 1:1 streams that cannot be pooled, so the cap has to
+# cover the real concurrent-socket count.
 (rpc_upstream_ws) {
 	reverse_proxy localhost:{$RPC_PORT:9944} {
-		# WebSocket subscriptions are long-lived bidirectional streams. Without
-		# immediate flushing Caddy buffers frames and can stall/drop idle sockets,
-		# which shows up as WS dying after seconds and clients reconnecting in a
-		# loop. -1 disables buffering so frames pass through as they arrive.
+		# Without immediate flushing Caddy buffers frames and stalls idle
+		# sockets, which shows up as WS dying after seconds and clients
+		# reconnecting in a loop.
 		flush_interval -1
 		transport http {
 			max_conns_per_host 500
 
-			# The cap alone is not enough, and 2026-09-14 is the proof: the pool
-			# filled and stayed full until `docker restart orbinum-caddy`, taking
-			# the ISMP relayer down with it for 38 minutes. The node was never the
-			# constraint — it allows 5000 and the two caps sum to 1900 — so the
-			# exhaustion was Caddy's own pool, and the "Too many connections" text
-			# clients saw was the node's error propagating from a slot that never
-			# came free.
-			#
-			# A WebSocket has no request boundary, so nothing ever tells Caddy the
-			# client is gone: a closed laptop, a dropped mobile network or a killed
-			# tab leaves the upstream half open, holding its slot forever. The count
-			# only rises. That is an accumulation bug — it worsens with uptime, not
-			# with load, which is why it survived every capacity estimate.
-			#
-			# TCP keepalives are what close them. The probes travel on the socket
-			# itself, so a peer that has silently vanished fails to answer and the
-			# connection is reaped instead of leaking. 30s detects a dead client
-			# within roughly a minute while being far too quiet to disturb a healthy
-			# subscription, which sees traffic on every block anyway.
+			# A WebSocket has no request boundary, so nothing tells Caddy the
+			# client is gone: a closed laptop or a killed tab leaves the
+			# upstream half open, holding its slot forever. TCP keepalive
+			# probes travel on the socket itself, so a vanished peer fails to
+			# answer and the connection is reaped. Without this the count only
+			# rises — an accumulation bug that worsens with uptime, not load,
+			# which is why it survived every capacity estimate.
 			keepalive_interval 30s
 
-			# Bound the connect attempt too. Without it a node that accepts the TCP
-			# handshake but never completes the upgrade — starting, or mid-restart —
-			# holds a slot for the OS default, minutes, for every client retrying.
+			# A node that accepts the handshake but never completes the upgrade
+			# — starting, or mid-restart — would otherwise hold a slot for the
+			# OS default, minutes, for every retrying client.
 			dial_timeout 10s
 		}
 		header_down -Access-Control-Allow-Origin
@@ -79,18 +77,16 @@
 }
 
 # HTTP JSON-RPC: POSTs finish in milliseconds, so a small keepalive pool serves
-# thousands of req/s. No flush_interval here — buffering is what lets these
+# thousands of req/s. No flush_interval — buffering is what lets these
 # connections be reused instead of held open per client.
 (rpc_upstream) {
 	reverse_proxy localhost:{$RPC_PORT:9944} {
 		transport http {
 			max_conns_per_host 400
+			# Idle connections retire on their own here, which is why this side
+			# did not fall over on 2026-09-14.
 			keepalive_idle_conns 100
 			keepalive 60s
-			# Same reason as the WS side: a node that accepts the handshake but
-			# never answers must not hold a pool slot for the OS default. This
-			# side already recycles — `keepalive 60s` retires idle connections —
-			# which is why it was not what fell over on 2026-09-14.
 			dial_timeout 10s
 		}
 		header_down -Access-Control-Allow-Origin
@@ -104,8 +100,8 @@
 {$RPC_DOMAIN:rpc.example.invalid} {
 	tls /etc/caddy/origin.pem /etc/caddy/origin.key
 
-	# Access log — who gets 429'd, with which client IP, and whether a 429 came
-	# from Caddy (Retry-After present) or the node ("Too many connections" body).
+	# Who gets 429'd, with which client IP, and whether the 429 came from Caddy
+	# (Retry-After present) or the node ("Too many connections" body).
 	log {
 		output file /data/access.log {
 			roll_size 50mb
@@ -114,10 +110,10 @@
 		format json
 	}
 
-	# ── CORS — Caddy is the single source ───────────────────────────────────────
-	# Set at the Caddy layer (not just the proxy) so Caddy-generated responses —
-	# the rate-limit 429 — carry CORS too; a 429 without CORS is what the browser
-	# turned into an opaque "CORS error" and broke the explorer.
+	# ── CORS ────────────────────────────────────────────────────────────────
+	# Set at the Caddy layer, not just the proxy, so Caddy-generated responses
+	# carry CORS too. A rate-limit 429 without CORS is what the browser turns
+	# into an opaque "CORS error", which is how this broke the explorer.
 	header {
 		Access-Control-Allow-Origin "*"
 		Access-Control-Allow-Methods "GET, POST, OPTIONS"
@@ -125,19 +121,22 @@
 		Access-Control-Max-Age "86400"
 	}
 
-	# CORS preflight: answer 204 here so the browser's OPTIONS probe never reaches
-	# the node or the rate limiter (a throttled preflight blocks the real request).
+	# Answer preflight here so the browser's OPTIONS probe never reaches the
+	# node or the rate limiter — a throttled preflight blocks the real request.
 	@options method OPTIONS
 	respond @options 204
 
-	# WebSocket subscriptions (live blocks, mempool) are a single long-lived upgrade
-	# request. The limiter counts each upgrade as one event, so this caps how often
-	# an IP may (re)open a socket — NOT how long one stays open. A healthy client
-	# opens one socket and holds it (the SDK's ws heartbeat keeps it alive), so 30
-	# upgrades / 60s is ample headroom for a page reload or a genuine reconnect,
-	# while a bot that reopens a socket every few seconds trips it. Keyed on the
-	# real client IP Cloudflare forwards; direct-origin (no CF header) falls back
-	# to the peer IP in a separate zone so a missing header can't share one bucket.
+	# ── Rate limits ─────────────────────────────────────────────────────────
+	# Both sections split by traffic source: Cloudflare-proxied requests are
+	# keyed on the client IP CF forwards, because the direct peer is always a CF
+	# edge and {remote_host} would put everyone in one bucket. Direct-origin
+	# requests get their own zone, so a missing header can never collapse every
+	# client into a shared bucket.
+
+	# One upgrade is one event, so this caps how often an IP may (re)open a
+	# socket — NOT how long one stays open. A healthy client opens one and holds
+	# it, so 30/60s is ample for a page reload while a bot that reconnects every
+	# few seconds trips it.
 	@websocket header Connection *Upgrade*
 	handle @websocket {
 		@wsViaCf header CF-Connecting-IP *
@@ -163,13 +162,8 @@
 		}
 	}
 
-	# HTTP JSON-RPC (POST): per-IP rate limit, 500 events / 10s = 50 req/s per
-	# IP — headroom for explorers/wallets/light bots that burst, while still
-	# capping an abusive IP. Two zones by traffic source: Cloudflare-proxied
-	# requests are keyed on the real client IP CF forwards (the direct peer is
-	# always a CF edge, {remote_host} would limit everyone as one bucket), and
-	# direct-origin requests are keyed on their peer IP in a separate zone —
-	# a missing header can never collapse everyone into one shared bucket.
+	# 500 events / 10s = 50 req/s per IP: headroom for explorers, wallets and
+	# light bots that burst, while still capping an abusive one.
 	@viaCf header CF-Connecting-IP *
 	handle @viaCf {
 		rate_limit {
