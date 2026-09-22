@@ -20,6 +20,7 @@ services:
       --chain /chain-specs/testnet-spec.json
       --name "${VALIDATOR_NAME:-Orbinum-Validator}"
       --base-path /data
+      ${SYNC_MODE}
       --listen-addr /ip4/0.0.0.0/tcp/${P2P_PORT:-30333}
       --validator
       --node-key ${VALIDATOR_NODE_KEY}
