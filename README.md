@@ -159,15 +159,9 @@ Every role can report to Orbinum's telemetry at
 height, finalized blocks, peers, transactions in the pool, propagation time,
 version and approximate location.
 
-**It is on by default, at verbosity `0`, for every role including validators.**
-Every role sends to `wss://telemetry.orbinum.io/submit/ 0` unless told
-otherwise; the node appears within a few seconds under the name in
-`VALIDATOR_NAME` / `RPC_NAME`.
-
-**Leave the level at `0`.** It carries everything the dashboard displays. The
-higher levels exist to debug consensus, not to run a node, and they are
-expensive for the service on the receiving end — see
-[Verbosity](#verbosity-leave-it-at-0) below.
+**It is on by default: validators at verbosity `1`, every other role at `0`.**
+The node appears within a few seconds under the name in `VALIDATOR_NAME` /
+`RPC_NAME`. See [Verbosity](#verbosity) below.
 
 To opt out, set the variable to empty in the node's `.env`:
 
@@ -203,32 +197,15 @@ Three things about that value are load-bearing:
 - **The quotes stay.** The node parses `"<url> <level>"` as a single argument;
   without them the level is read as a separate flag and startup fails.
 - **The trailing slash stays.** `/submit` without it does not upgrade.
-- **`0` is the verbosity level**, not a placeholder. Keep it at `0`.
+- **The digit is the verbosity level**, not a placeholder.
 
-### Verbosity: leave it at `0`
+### Verbosity
 
-Level `0` sends everything the dashboard shows. Level `1` adds one thing it
-can use — `afg.authority_set`, which carries a validator's address — and a
-large amount it cannot.
-
-The cost is in the GRANDPA gossip. Substrate emits a telemetry frame for every
-vote a node **receives**, as long as the authority set is at most 10 voters
-(`TELEMETRY_VOTERS_LIMIT` in `sc-consensus-grandpa`). Measured against this
-chain, roughly three quarters of a level-1 node's frames are `afg.received_*`,
-and the telemetry service discards every one of them on arrival.
-
-Two consequences worth stating plainly, because both are easy to guess wrong:
-
-- **It is not only validators.** The frames come from relaying gossip, not from
-  voting. A full node outside the authority set emits them too — in a local
-  measurement, slightly more than a validator did.
-- **It is worst on a small network.** The emission stops entirely once the
-  authority set passes 10 voters. A chain sitting just under that limit pays
-  the most.
-
-So `1` is a debugging level: useful when you are investigating consensus on
-your own node and reading the raw frames, not something to run with. If you
-turn it on for that, turn it back off afterwards.
+- **Validators: `1`.** Level 1 adds `afg.authority_set`, which is how the
+  dashboard shows whether the node holds a key in the current GRANDPA set (the
+  ✓ in Type) and its address.
+- **Every other role: `0`.** It carries everything the dashboard shows for a
+  non-validator.
 
 Telemetry is an outbound connection, so it exposes no port and needs no
 firewall change — it works on nodes whose RPC is loopback-only.
