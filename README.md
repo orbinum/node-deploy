@@ -79,27 +79,36 @@ docker compose up -d
 Generate the node-key with `openssl rand -hex 32`.
 
 Session keys come after the node is synced. Generate them **on the node itself**
-and register the public blob on-chain:
+and register the public keys on-chain:
 
 ```bash
-# 1. Generate — returns a 0x blob of 128 hex chars (Aura + GRANDPA)
+# 0. Your account's public key as hex (32 raw bytes behind the SS58 address)
+docker exec orbinum-validator orbinum-node key inspect <your SS58 address>
+
+# 1. Generate — returns {"keys": 0x…, "proof": 0x…}. keys = Aura + GRANDPA
+#    public keys (64 bytes); proof = one signature per key over your account id.
 docker exec orbinum-validator curl -s -H 'Content-Type: application/json' \
-  -d '{"id":1,"jsonrpc":"2.0","method":"author_rotateKeys"}' \
+  -d '{"id":1,"jsonrpc":"2.0","method":"author_rotateKeysWithOwner","params":["<account hex>"]}' \
   http://localhost:9944
 
-# 2. Submit session.setKeys(keys = <blob>, proof = 0x00) from your validator
+# 2. Submit session.setKeys(keys = <keys>, proof = <proof>) from that same
 #    account — Polkadot.js Apps, Developer → Extrinsics.
 
 # 3. Verify the keystore actually holds them
 docker exec orbinum-validator curl -s -H 'Content-Type: application/json' \
-  -d '{"id":1,"jsonrpc":"2.0","method":"author_hasSessionKeys","params":["<blob>"]}' \
+  -d '{"id":1,"jsonrpc":"2.0","method":"author_hasSessionKeys","params":["<keys>"]}' \
   http://localhost:9944
 ```
 
 Step 3 must return `true`. Rotating on one host and registering from another
 leaves the chain holding keys no node can sign with — every other check passes and
-the validator silently never authors. `proof` is `0x00`, the SCALE encoding of an
-empty `Vec<u8>`; a bare `0x` fails to decode outside Polkadot.js Apps.
+the validator silently never authors.
+
+The runtime verifies `proof` on-chain (`spec_version` 11 and later). `0x00`, an
+empty value, or a proof generated for a different owner account is rejected with
+`Session.InvalidProof`. If step 1 returns no `proof` field, the node is still
+syncing an older runtime: wait for `system_health` to show `"isSyncing": false`
+and rotate again.
 
 Inside the container the RPC port is always `9944`. On the host it is whatever
 `RPC_PORT` you set (bound to `127.0.0.1`), so `docker exec` avoids the mismatch.
@@ -150,9 +159,15 @@ Every role can report to Orbinum's telemetry at
 height, finalized blocks, peers, transactions in the pool, propagation time,
 version and approximate location.
 
-**It is on by default.** Every role sends to `wss://telemetry.orbinum.io/submit/`
-unless told otherwise; the node appears within a few seconds under the name in
+**It is on by default, at verbosity `0`, for every role including validators.**
+Every role sends to `wss://telemetry.orbinum.io/submit/ 0` unless told
+otherwise; the node appears within a few seconds under the name in
 `VALIDATOR_NAME` / `RPC_NAME`.
+
+**Leave the level at `0`.** It carries everything the dashboard displays. The
+higher levels exist to debug consensus, not to run a node, and they are
+expensive for the service on the receiving end — see
+[Verbosity](#verbosity-leave-it-at-0) below.
 
 To opt out, set the variable to empty in the node's `.env`:
 
@@ -188,8 +203,32 @@ Three things about that value are load-bearing:
 - **The quotes stay.** The node parses `"<url> <level>"` as a single argument;
   without them the level is read as a separate flag and startup fails.
 - **The trailing slash stays.** `/submit` without it does not upgrade.
-- **`0` is the verbosity level**, not a placeholder. Higher levels add
-  per-block chatter that the dashboard does not display.
+- **`0` is the verbosity level**, not a placeholder. Keep it at `0`.
+
+### Verbosity: leave it at `0`
+
+Level `0` sends everything the dashboard shows. Level `1` adds one thing it
+can use — `afg.authority_set`, which carries a validator's address — and a
+large amount it cannot.
+
+The cost is in the GRANDPA gossip. Substrate emits a telemetry frame for every
+vote a node **receives**, as long as the authority set is at most 10 voters
+(`TELEMETRY_VOTERS_LIMIT` in `sc-consensus-grandpa`). Measured against this
+chain, roughly three quarters of a level-1 node's frames are `afg.received_*`,
+and the telemetry service discards every one of them on arrival.
+
+Two consequences worth stating plainly, because both are easy to guess wrong:
+
+- **It is not only validators.** The frames come from relaying gossip, not from
+  voting. A full node outside the authority set emits them too — in a local
+  measurement, slightly more than a validator did.
+- **It is worst on a small network.** The emission stops entirely once the
+  authority set passes 10 voters. A chain sitting just under that limit pays
+  the most.
+
+So `1` is a debugging level: useful when you are investigating consensus on
+your own node and reading the raw frames, not something to run with. If you
+turn it on for that, turn it back off afterwards.
 
 Telemetry is an outbound connection, so it exposes no port and needs no
 firewall change — it works on nodes whose RPC is loopback-only.
