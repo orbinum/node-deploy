@@ -18,7 +18,7 @@ services:
       - 1.1.1.1
     command: >
       --chain /chain-specs/testnet-spec.json
-      --name "${VALIDATOR_NAME:-Orbinum-Validator}"
+      --name "${VALIDATOR_NAME:?set VALIDATOR_NAME in .env, the name telemetry shows for this node}"
       --base-path /data
       ${SYNC_MODE}
       --listen-addr /ip4/0.0.0.0/tcp/${P2P_PORT:-30333}
