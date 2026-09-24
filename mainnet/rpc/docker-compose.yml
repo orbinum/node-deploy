@@ -19,7 +19,7 @@ services:
       - 1.1.1.1
     command: >
       --chain /chain-specs/mainnet-spec.json
-      --name "${RPC_NAME:-Orbinum-RPC}"
+      --name "${RPC_NAME:?set RPC_NAME in .env, the name telemetry shows for this node}"
       --base-path /data
       --listen-addr /ip4/0.0.0.0/tcp/${P2P_PORT:-30333}
       --node-key ${RPC_NODE_KEY}

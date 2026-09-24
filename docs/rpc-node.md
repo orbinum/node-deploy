@@ -82,7 +82,7 @@ Edit `.env` and set:
 
 | Variable        | What to set                                                                   |
 | --------------- | ----------------------------------------------------------------------------- |
-| `RPC_NAME`      | Identifiable name shown in telemetry (e.g. `Orbinum-RPC-1`).                  |
+| `RPC_NAME`      | Required. Identifiable name shown in telemetry (e.g. `Orbinum-RPC-1`).        |
 | `RPC_NODE_KEY`  | This node's libp2p key — generate with `openssl rand -hex 32`.                |
 | `RPC_DOMAIN`    | Public domain with a DNS A record pointing to this VPS's public IP.           |
 | `TELEMETRY_URL` | On by default; set empty to opt out. See [Telemetry](../README.md#telemetry). |
