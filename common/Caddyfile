@@ -21,12 +21,14 @@
 #
 # `max_conns_per_host` applies PER IMPORT, not per snippet, and each snippet is
 # imported twice: once for the Cloudflare-proxied branch, once for direct
-# origin. Four transport blocks, so the ceiling is 500+500+400+400 = 1800
-# against the node's --rpc-max-connections 5000. Check it, do not assume it:
+# origin. Four transport blocks against two node endpoints: WebSocket 500+500 =
+# 1000 against RPC_WS_PORT's max-connections 1500, HTTP 400+400 = 800 against
+# RPC_PORT's 3500. Check it, do not assume it:
 #
 #   caddy adapt --config Caddyfile | grep -o '"max_conns_per_host":[0-9]*'
 #
-# `tests/test_caddy_conn_cap.py` asserts the sum stays under the node's limit.
+# `tests/test_rpc_config.py` (CI) asserts the caps keep each node endpoint under
+# its limit; `tests/test_caddy_conn_cap.py` proves it end to end in Docker.
 #
 # Getting this wrong is what caused the 2026-09-14 outage: the caps were 1500
 # each, the real ceiling was 3800 rather than the 1900 a stale comment claimed,
@@ -39,6 +41,18 @@
 	order rate_limit before basic_auth
 }
 
+# Cloudflare's edge ranges (https://www.cloudflare.com/ips-v4, /ips-v6). A
+# request counts as proxied, and is keyed on CF-Connecting-IP, only when it
+# comes from one of these: otherwise anyone reaching the origin directly could
+# send a fresh header per request and land in a new rate-limit bucket each time.
+# ponytail: a static copy, like the ufw allow-list. When Cloudflare adds a range,
+# update both here and run scripts/sync-cloudflare-ufw.sh; until then requests
+# from the new range fall to the direct zone, keyed on the edge IP.
+(cloudflare_edge) {
+	remote_ip 173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22
+	remote_ip 2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32
+}
+
 # Both snippets strip the node's CORS headers so only Caddy's single copy
 # survives — the node also emits CORS via --rpc-cors all, and duplicates make
 # the browser reject the response with "multiple values '*, *'".
@@ -46,7 +60,9 @@
 # WebSocket: long-lived 1:1 streams that cannot be pooled, so the cap has to
 # cover the real concurrent-socket count.
 (rpc_upstream_ws) {
-	reverse_proxy localhost:{$RPC_PORT:9944} {
+	# The node's rate-limited WebSocket endpoint: Caddy counts connections, the
+	# node counts the calls inside each one.
+	reverse_proxy localhost:{$RPC_WS_PORT:9945} {
 		# Without immediate flushing Caddy buffers frames and stalls idle
 		# sockets, which shows up as WS dying after seconds and clients
 		# reconnecting in a loop.
@@ -127,9 +143,10 @@
 	respond @options 204
 
 	# ── Rate limits ─────────────────────────────────────────────────────────
-	# Both sections split by traffic source: Cloudflare-proxied requests are
-	# keyed on the client IP CF forwards, because the direct peer is always a CF
-	# edge and {remote_host} would put everyone in one bucket. Direct-origin
+	# Both sections split by traffic source: Cloudflare-proxied requests (the
+	# header, from a Cloudflare range) are keyed on the client IP CF forwards,
+	# because the direct peer is always a CF edge and {remote_host} would put
+	# everyone in one bucket. Direct-origin
 	# requests get their own zone, so a missing header can never collapse every
 	# client into a shared bucket.
 
@@ -139,7 +156,10 @@
 	# few seconds trips it.
 	@websocket header Connection *Upgrade*
 	handle @websocket {
-		@wsViaCf header CF-Connecting-IP *
+		@wsViaCf {
+			header CF-Connecting-IP *
+			import cloudflare_edge
+		}
 		handle @wsViaCf {
 			rate_limit {
 				zone ws_cf {
@@ -164,7 +184,10 @@
 
 	# 500 events / 10s = 50 req/s per IP: headroom for explorers, wallets and
 	# light bots that burst, while still capping an abusive one.
-	@viaCf header CF-Connecting-IP *
+	@viaCf {
+		header CF-Connecting-IP *
+		import cloudflare_edge
+	}
 	handle @viaCf {
 		rate_limit {
 			zone rpc_cf {
