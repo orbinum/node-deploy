@@ -147,9 +147,19 @@ with `tls /etc/caddy/origin.pem /etc/caddy/origin.key`.
 
 The `testnet/rpc/docker-compose.yml` stack runs the node **and Caddy**. Caddy is a custom
 image (`Caddy.Dockerfile`) — base `caddy:2-alpine` plus the `caddy-ratelimit`
-plugin — so it must be built before the first start. It reverse-proxies HTTPS/WSS
-on port 443 to the node's local RPC (`localhost:9944`) and rate-limits per client
-IP (100 req / 10s, keyed on `CF-Connecting-IP`).
+plugin — so it must be built before the first start. It reverse-proxies HTTPS on
+port 443 to the node's HTTP endpoint (`localhost:9944`) and WSS to its WebSocket
+endpoint (`localhost:9945`). Limits per client IP, keyed on `CF-Connecting-IP`
+when the request comes from a Cloudflare range (on the peer IP otherwise):
+
+| Traffic   | Caddy                      | Node                               |
+| --------- | -------------------------- | ---------------------------------- |
+| HTTP      | 500 requests / 10 s (50/s) | —                                  |
+| WebSocket | 30 new connections / 60 s  | 1200 calls / min per socket (20/s) |
+
+Both node endpoints serve only the safe RPC methods (`methods=safe`): the
+`author_*` key and pool methods, `system_*Reserved*`, `offchain_*` and the like
+answer `RPC call is unsafe to be called externally`.
 
 ```bash
 docker compose build caddy   # compile the rate-limit plugin

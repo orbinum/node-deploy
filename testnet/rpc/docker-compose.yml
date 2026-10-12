@@ -5,9 +5,23 @@
 # Cloudflare Origin Certificate, so the node itself speaks plain HTTP on
 # RPC_PORT and is never exposed directly.
 #
-# `--rpc-methods Safe`: a public endpoint must not offer author_rotateKeys,
-# offchain storage or the other unsafe namespaces. Archive on both axes
+# `methods=safe` on each endpoint: a public endpoint must not offer
+# author_rotateKeys, offchain storage or the other unsafe namespaces. The binary
+# forces `--rpc-methods Unsafe` (for the ISMP relayer), which only governs
+# --rpc-port; an endpoint's own `methods=` is what applies to it. ISMP queries
+# work under `safe`. Archive on both axes
 # (--state-pruning / --blocks-pruning) so historical queries answer.
+#
+# Two RPC endpoints, because Caddy limits HTTP per client IP but can only count
+# WebSocket *connections*, not the calls inside one:
+#   - RPC_PORT (HTTP, and local clients): no per-connection limit — Caddy pools
+#     many users onto a few upstream connections, so one would throttle them all.
+#     Binds on RPC_BIND: all interfaces here, because the relayer reads this node
+#     over the private network (see .env.example).
+#   - RPC_WS_PORT (loopback, Caddy's WSS upstream): `rate-limit` caps the calls
+#     each socket may make per minute; subscription notifications do not count.
+# `--experimental-rpc-endpoint` replaces --rpc-port/--rpc-external/--rpc-cors/
+# --rpc-methods/--rpc-max-connections, which cannot be combined with it.
 #
 # Three containers, one purpose: the node, Caddy for TLS, and Watchtower to
 # keep the image current. See the Watchtower block for how a failed update
@@ -30,11 +44,8 @@ services:
       --node-key ${RPC_NODE_KEY}
       ${RESERVED_NODES}
       ${TELEMETRY_URL---telemetry-url "wss://telemetry.orbinum.io/submit/ 0"}
-      --rpc-port ${RPC_PORT:-9944}
-      --rpc-cors all
-      --rpc-external
-      --rpc-methods Safe
-      --rpc-max-connections 5000
+      --experimental-rpc-endpoint "listen-addr=${RPC_BIND:-0.0.0.0}:${RPC_PORT:-9944},methods=safe,cors=all,max-connections=3500"
+      --experimental-rpc-endpoint "listen-addr=127.0.0.1:${RPC_WS_PORT:-9945},methods=safe,cors=all,max-connections=1500,rate-limit=${RPC_WS_RATE_LIMIT:-1200}"
       --in-peers 64
       --out-peers 16
       --state-pruning archive
@@ -81,6 +92,7 @@ services:
     environment:
       RPC_DOMAIN: ${RPC_DOMAIN:-rpc.example.invalid}
       RPC_PORT: ${RPC_PORT:-9944}
+      RPC_WS_PORT: ${RPC_WS_PORT:-9945}
     volumes:
       - ../../common/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./origin.pem:/etc/caddy/origin.pem:ro

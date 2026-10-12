@@ -1,8 +1,10 @@
 # Orbinum Mainnet — public RPC node.
 #
 # Same shape as testnet/rpc, pointed at the mainnet image and chain spec: the
-# node behind Caddy for TLS, `--rpc-methods Safe` because the endpoint is
-# public, archive pruning so historical queries answer.
+# node behind Caddy for TLS, two RPC endpoints with `methods=safe` because the
+# endpoint is public (see testnet/rpc for why there are two, and why
+# `--rpc-methods` would not do), archive pruning so historical queries answer.
+# RPC_BIND defaults to loopback here: no other host reads this node.
 #
 # The image tag differs on purpose (`mainnet-latest`): a stable `vX.Y.Z` tag
 # publishes it, a prerelease never does, so an rc can never reach mainnet by
@@ -25,11 +27,8 @@ services:
       --node-key ${RPC_NODE_KEY}
       ${RESERVED_NODES}
       ${TELEMETRY_URL---telemetry-url "wss://telemetry.orbinum.io/submit/ 0"}
-      --rpc-port ${RPC_PORT:-9944}
-      --rpc-cors all
-      --rpc-external
-      --rpc-methods Safe
-      --rpc-max-connections 5000
+      --experimental-rpc-endpoint "listen-addr=${RPC_BIND:-127.0.0.1}:${RPC_PORT:-9944},methods=safe,cors=all,max-connections=3500"
+      --experimental-rpc-endpoint "listen-addr=127.0.0.1:${RPC_WS_PORT:-9945},methods=safe,cors=all,max-connections=1500,rate-limit=${RPC_WS_RATE_LIMIT:-1200}"
       --state-pruning archive
       --blocks-pruning archive
       --no-mdns
@@ -74,6 +73,7 @@ services:
     environment:
       RPC_DOMAIN: ${RPC_DOMAIN:-rpc.example.invalid}
       RPC_PORT: ${RPC_PORT:-9944}
+      RPC_WS_PORT: ${RPC_WS_PORT:-9945}
     volumes:
       - ../../common/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./origin.pem:/etc/caddy/origin.pem:ro
