@@ -54,7 +54,7 @@
 }
 
 # Both snippets strip the node's CORS headers so only Caddy's single copy
-# survives — the node also emits CORS via --rpc-cors all, and duplicates make
+# survives — a node started with --rpc-cors emits its own, and duplicates make
 # the browser reject the response with "multiple values '*, *'".
 
 # WebSocket: long-lived 1:1 streams that cannot be pooled, so the cap has to

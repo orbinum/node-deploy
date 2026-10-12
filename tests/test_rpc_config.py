@@ -43,6 +43,9 @@ class PublicRpcTests(unittest.TestCase):
                 self.assertEqual(len(eps), 2)
                 for ep in eps:
                     self.assertEqual(ep.get("methods"), "safe", ep)
+                    # `cors=` turns on the node's Host filter, which rejects
+                    # the public Host Caddy forwards.
+                    self.assertNotIn("cors", ep)
 
     def test_websocket_endpoint_is_loopback_and_rate_limited(self):
         for path in RPC_STACKS:
