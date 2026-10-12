@@ -25,6 +25,9 @@
 # No `cors=` on an endpoint: setting one also turns on the node's Host filter,
 # which admits only localhost and rejects Caddy's forwarded public Host
 # ("Provided Host header is not whitelisted"). Caddy sets CORS itself.
+# `max-request-size`/`max-response-size` 150 MiB, as the binary forces for
+# --rpc-port: an endpoint does not inherit it, and the 15 MiB default truncates
+# the large GRANDPA proofs the relayer fetches.
 #
 # Three containers, one purpose: the node, Caddy for TLS, and Watchtower to
 # keep the image current. See the Watchtower block for how a failed update
@@ -47,8 +50,8 @@ services:
       --node-key ${RPC_NODE_KEY}
       ${RESERVED_NODES}
       ${TELEMETRY_URL---telemetry-url "wss://telemetry.orbinum.io/submit/ 0"}
-      --experimental-rpc-endpoint "listen-addr=${RPC_BIND:-0.0.0.0}:${RPC_PORT:-9944},methods=safe,max-connections=3500"
-      --experimental-rpc-endpoint "listen-addr=127.0.0.1:${RPC_WS_PORT:-9945},methods=safe,max-connections=1500,rate-limit=${RPC_WS_RATE_LIMIT:-1200}"
+      --experimental-rpc-endpoint "listen-addr=${RPC_BIND:-0.0.0.0}:${RPC_PORT:-9944},methods=safe,max-request-size=150,max-response-size=150,max-connections=3500"
+      --experimental-rpc-endpoint "listen-addr=127.0.0.1:${RPC_WS_PORT:-9945},methods=safe,max-request-size=150,max-response-size=150,max-connections=1500,rate-limit=${RPC_WS_RATE_LIMIT:-1200}"
       --in-peers 64
       --out-peers 16
       --state-pruning archive

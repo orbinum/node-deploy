@@ -46,6 +46,10 @@ class PublicRpcTests(unittest.TestCase):
                     # `cors=` turns on the node's Host filter, which rejects
                     # the public Host Caddy forwards.
                     self.assertNotIn("cors", ep)
+                    # The binary's 150 MiB applies to --rpc-port only; GRANDPA
+                    # proofs need it on every endpoint.
+                    self.assertEqual(ep.get("max-request-size"), "150", ep)
+                    self.assertEqual(ep.get("max-response-size"), "150", ep)
 
     def test_websocket_endpoint_is_loopback_and_rate_limited(self):
         for path in RPC_STACKS:

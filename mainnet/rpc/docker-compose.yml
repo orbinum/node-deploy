@@ -27,8 +27,8 @@ services:
       --node-key ${RPC_NODE_KEY}
       ${RESERVED_NODES}
       ${TELEMETRY_URL---telemetry-url "wss://telemetry.orbinum.io/submit/ 0"}
-      --experimental-rpc-endpoint "listen-addr=${RPC_BIND:-127.0.0.1}:${RPC_PORT:-9944},methods=safe,max-connections=3500"
-      --experimental-rpc-endpoint "listen-addr=127.0.0.1:${RPC_WS_PORT:-9945},methods=safe,max-connections=1500,rate-limit=${RPC_WS_RATE_LIMIT:-1200}"
+      --experimental-rpc-endpoint "listen-addr=${RPC_BIND:-127.0.0.1}:${RPC_PORT:-9944},methods=safe,max-request-size=150,max-response-size=150,max-connections=3500"
+      --experimental-rpc-endpoint "listen-addr=127.0.0.1:${RPC_WS_PORT:-9945},methods=safe,max-request-size=150,max-response-size=150,max-connections=1500,rate-limit=${RPC_WS_RATE_LIMIT:-1200}"
       --state-pruning archive
       --blocks-pruning archive
       --no-mdns
