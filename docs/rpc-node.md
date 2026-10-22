@@ -80,12 +80,13 @@ cp .env.example .env
 
 Edit `.env` and set:
 
-| Variable        | What to set                                                                   |
-| --------------- | ----------------------------------------------------------------------------- |
-| `RPC_NAME`      | Required. Identifiable name shown in telemetry (e.g. `Orbinum-RPC-1`).        |
-| `RPC_NODE_KEY`  | This node's libp2p key — generate with `openssl rand -hex 32`.                |
-| `RPC_DOMAIN`    | Public domain with a DNS A record pointing to this VPS's public IP.           |
-| `TELEMETRY_URL` | On by default; set empty to opt out. See [Telemetry](../README.md#telemetry). |
+| Variable         | What to set                                                                    |
+| ---------------- | ------------------------------------------------------------------------------ |
+| `RPC_NAME`       | Required. Identifiable name shown in telemetry (e.g. `Orbinum-RPC-1`).         |
+| `RPC_NODE_KEY`   | This node's libp2p key — generate with `openssl rand -hex 32`.                 |
+| `RPC_DOMAIN`     | Public domain with a DNS A record pointing to this VPS's public IP.            |
+| `TELEMETRY_URL`  | On by default; set empty to opt out. See [Telemetry](../README.md#telemetry).  |
+| `RESERVED_NODES` | Empty, or your validator as a sentry. See [Validator](../README.md#validator). |
 
 > **Keep `RPC_NODE_KEY` stable** — this node's PeerId goes public in `bootNodes`.
 > If the key changes, the PeerId changes and the chain spec's bootnode entry breaks.

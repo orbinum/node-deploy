@@ -2,9 +2,10 @@
 extends: default
 
 rules:
-  # Compose `command: >` folded blocks and long image refs run past 80 cols.
+  # Compose `command: >` folded blocks and long image refs run past 80 cols, and
+  # an `--experimental-rpc-endpoint` spec is one argument that cannot wrap.
   line-length:
-    max: 160
+    max: 200
     level: warning
   # Prettier owns indentation/spacing; don't double-fight it.
   indentation:

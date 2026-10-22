@@ -68,7 +68,24 @@ be removed rather than debugged later.
 
 ## Validator
 
-Joins the network, authors blocks. No public RPC. Needs TCP **30333** reachable.
+Joins the network, authors blocks. No public RPC. Needs TCP **30333** reachable
+by its peers: publicly, or only by its sentries when it runs behind them.
+
+**Behind sentries (recommended).** Private spends are unsigned, so every node
+they reach verifies their zero-knowledge proof on arrival, and a peer sending
+invalid ones loses too little reputation to be banned. A validator that takes
+transactions only from its own sentries (RPC nodes, see
+[docs/rpc-node.md](docs/rpc-node.md)) never pays that cost for strangers:
+
+```bash
+# validator .env — never --reserved-only with no sentry listed
+RESERVED_NODES=--reserved-only --reserved-nodes /ip4/<sentry-ip>/tcp/30333/p2p/<sentry-peer-id>
+# each sentry's .env — no --reserved-only, it stays public
+RESERVED_NODES=--reserved-nodes /ip4/<validator-ip>/tcp/30333/p2p/<validator-peer-id>
+```
+
+Then allow `30333` on the validator only from the sentries' IPs. Without a
+sentry, leave `RESERVED_NODES` empty and keep `30333` public.
 
 ```bash
 cd testnet/validator      # or mainnet/validator
