@@ -82,6 +82,13 @@ services:
       - caddy-config:/config
     labels:
       com.centurylinklabs.watchtower.enable: "false"
+    # Caddy's error log goes to stderr, one ~2 KB line per failed request. Unbounded,
+    # a node outage turned it into a full disk, which corrupted the node's db_version.
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
 
   watchtower:
     image: ghcr.io/nicholas-fedor/watchtower:latest
