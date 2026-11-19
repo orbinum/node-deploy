@@ -255,8 +255,10 @@ recovers it on its own once a fixed image is published under the same tag
 (`WATCHTOWER_INCLUDE_STOPPED`, `WATCHTOWER_REVIVE_STOPPED`,
 `WATCHTOWER_INCLUDE_RESTARTING`). Before this, Watchtower scanned only running
 containers, so a node killed by a bad image was invisible to it and needed a human.
-The previous image is also kept on disk (`WATCHTOWER_CLEANUP=false`) so rolling back
-is one line: set `ORBINUM_IMAGE` to it and `docker compose up -d <node-service>`.
+Watchtower deletes the replaced image after each update (`WATCHTOWER_CLEANUP=true`):
+keeping them all filled a 75 GB disk and stalled a node. Rolling back is still one
+line, it just pulls from ghcr: set `ORBINUM_IMAGE=ghcr.io/orbinum/node:<previous tag>`
+and `docker compose up -d <node-service>`.
 Stacks deployed before these flags existed need one `git pull && docker compose up -d`
 to pick them up — after that, no more visits.
 
